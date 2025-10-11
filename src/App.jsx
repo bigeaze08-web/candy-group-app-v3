@@ -1,7 +1,6 @@
 import React from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
 import supabase from './supabase'
-import App from './App.jsx'
 
 function Header({ user }) {
   return (
@@ -273,4 +272,3 @@ export default function App(){
     </>
   )
 }
-
