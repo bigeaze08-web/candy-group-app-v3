@@ -1,0 +1,1 @@
+# Candy Group App\nSee chat instructions for Supabase SQL & Netlify env vars.
