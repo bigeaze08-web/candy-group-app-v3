@@ -1,47 +1,58 @@
 import React from 'react'
-import { Routes, Route, NavLink } from 'react-router-dom'
+import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
 import supabase from './supabase'
 
-/* ---------------- Header (big logo + QR + Admin link) ---------------- */
+/* ---------------- Small helpers ---------------- */
+const LOGO_SRC = '/logo.jpg'
+const FALLBACK_SVG =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160">
+       <rect width="100%" height="100%" fill="#e2e8f0"/>
+       <text x="50%" y="50%" font-size="22" text-anchor="middle" fill="#334155" dy=".35em">
+         Image not available
+       </text>
+     </svg>`
+  )
+
+async function isAdmin() {
+  const { data, error } = await supabase.rpc('is_admin')
+  return !!data && !error
+}
+
+/* ---------------- Header (title smaller; nav below) ---------------- */
 function Header({ user, isAdmin }) {
   return (
-    <header>
-      <div className="inner">
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <img src="/logo.jpg" alt="Candy Group" style={{height:160, borderRadius:16}}/>
-          <div style={{fontWeight:800, fontSize:72}}>Candy Group App</div>
+    <header style={{position:'sticky', top:0, zIndex:10, background:'rgba(241,245,249,.85)', backdropFilter:'saturate(180%) blur(8px)', borderBottom:'1px solid #e2e8f0'}}>
+      <div className="inner" style={{display:'flex', alignItems:'center', gap:16, padding:'10px 16px', maxWidth:1100, margin:'0 auto'}}>
+        <img
+          src={LOGO_SRC}
+          alt="Candy Weight Loss Challenge"
+          style={{height:120, borderRadius:16}}
+          onError={(e)=>{ e.currentTarget.src = FALLBACK_SVG }}
+        />
+        <div style={{fontWeight:800, fontSize:48, lineHeight:1.1}}>
+          Candy Weight Loss Challenge
         </div>
-        <nav style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-          <NavLink to="/dashboard" className={({isActive})=> isActive ? 'active' : undefined}>Dashboard</NavLink>
-          <NavLink to="/participants" className={({isActive})=> isActive ? 'active' : undefined}>Participants</NavLink>
-          <NavLink to="/attendance" className={({isActive})=> isActive ? 'active' : undefined}>Attendance</NavLink>
-          <NavLink to="/register" className={({isActive})=> isActive ? 'active' : undefined}>Register</NavLink>
-          <NavLink to="/my-profile" className={({isActive})=> isActive ? 'active' : undefined}>My Profile</NavLink>
-          {isAdmin && (
-            <NavLink to="/admin" className={({isActive})=> isActive ? 'active' : undefined}>Admin</NavLink>
-          )}
+      </div>
 
-          {/* QR code for current site URL */}
-          <a
-            href={`https://chart.googleapis.com/chart?cht=qr&chs=512x512&chld=M|0&chl=${encodeURIComponent(window.location.origin)}`}
-            target="_blank" rel="noreferrer"
-            style={{textDecoration:'none', padding:'6px 10px', borderRadius:8}}
-          >
-            QR Code
-          </a>
+      {/* separate nav bar under header */}
+      <div style={{borderTop:'1px solid #e2e8f0', background:'#fff'}}>
+        <nav className="inner" style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', padding:'8px 16px', maxWidth:1100, margin:'0 auto'}}>
+          <NavLink to="/dashboard" className={({isActive})=> isActive? 'active' : undefined }>Dashboard</NavLink>
+          <NavLink to="/participants" className={({isActive})=> isActive? 'active' : undefined }>Participants</NavLink>
+          <NavLink to="/attendance" className={({isActive})=> isActive? 'active' : undefined }>Attendance</NavLink>
+          <NavLink to="/register" className={({isActive})=> isActive? 'active' : undefined }>Register</NavLink>
+          <NavLink to="/my-profile" className={({isActive})=> isActive? 'active' : undefined }>My Profile</NavLink>
+          <NavLink to="/qr" className={({isActive})=> isActive? 'active' : undefined }>QR</NavLink>
+          {isAdmin && <NavLink to="/admin" className={({isActive})=> isActive? 'active' : undefined }>Admin</NavLink>}
 
-          {/* Admin sign-in (only needed to access /admin) */}
+          <div style={{flex:1}} />
           {user
             ? <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>Sign out</button>
-            : <button className="btn" onClick={async ()=>{
-                const email = prompt('Enter your admin email for a sign-in link:')
-                if(!email) return
-                const { error } = await supabase.auth.signInWithOtp({
-                  email,
-                  options: { shouldCreateUser:false, emailRedirectTo: window.location.origin }
-                })
-                alert(error ? error.message : 'Check your email and open the newest link in THIS browser.')
-              }}>Admin sign in</button>
+            : <NavLink to="/admin-login" className={({isActive})=> isActive? 'active' : undefined }>
+                <button className="btn">Admin sign in</button>
+              </NavLink>
           }
         </nav>
       </div>
@@ -49,14 +60,59 @@ function Header({ user, isAdmin }) {
   )
 }
 
-/* ---------------- Helpers ---------------- */
-async function isAdmin() {
-  const { data, error } = await supabase.rpc('is_admin')
-  return !!data && !error
-}
-
 /* ---------------- Pages ---------------- */
 
+/* QR page renders a QR of the site URL (no external nav 404s) */
+function QRPage(){
+  const url = (typeof window !== 'undefined') ? window.location.origin : ''
+  // QuickChart QR endpoint (no library needed)
+  const qr = `https://quickchart.io/qr?text=${encodeURIComponent(url)}&size=300&margin=1`
+  return (
+    <div className="container">
+      <div className="card" style={{padding:16, textAlign:'center'}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Share this app</div>
+        <img src={qr} alt="QR" style={{width:240, height:240}} onError={e=>{ e.currentTarget.src = FALLBACK_SVG }} />
+        <div style={{marginTop:8, fontSize:12, color:'#475569'}}>{url}</div>
+      </div>
+    </div>
+  )
+}
+
+/* Admin login page (email/password) */
+function AdminLoginPage(){
+  const [email, setEmail] = React.useState('')
+  const [password, setPassword] = React.useState('')
+  const [loading, setLoading] = React.useState(false)
+  const navigate = useNavigate()
+
+  async function login(e){
+    e.preventDefault()
+    setLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    setLoading(false)
+    if (error) { alert(error.message); return }
+    const ok = await isAdmin()
+    if (!ok) { alert('Signed in but not an admin. Ask owner to add your email to app_admins.'); return }
+    navigate('/admin')
+  }
+
+  return (
+    <div className="container">
+      <div className="card" style={{padding:16, maxWidth:480, margin:'12px auto'}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Admin sign in</div>
+        <form onSubmit={login}>
+          <input className="input" type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
+          <input className="input" type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required />
+          <div style={{display:'flex', justifyContent:'flex-end', marginTop:8}}>
+            <button className="btn" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* Registration (no login required), optional email, optional photo */
 function RegisterPage() {
   const [form, setForm] = React.useState({
     name:'', email:'', phone:'', gender:'', height_cm:'', start_weight_kg:'', start_waist_cm:''
@@ -83,7 +139,6 @@ function RegisterPage() {
       .insert(row)
       .select()
       .single()
-
     if (insertErr) { alert(insertErr.message); setSaving(false); return }
 
     if (photoFile) {
@@ -154,6 +209,7 @@ function RegisterPage() {
   )
 }
 
+/* My Profile (optional for admins; read-only email) */
 function MyProfilePage(){
   const [user, setUser] = React.useState(null)
   const [p, setP] = React.useState(null)
@@ -189,7 +245,7 @@ function MyProfilePage(){
     alert('Photo uploaded!')
   }
 
-  if (!user) return <div className="container"><div className="card" style={{padding:16}}>Admins only: sign in from the header (optional).</div></div>
+  if (!user) return <div className="container"><div className="card" style={{padding:16}}>Admins can sign in from the header to link a profile.</div></div>
   if (!p) return <div className="container"><div className="card" style={{padding:16}}>No profile found for your email.</div></div>
 
   return (
@@ -218,16 +274,25 @@ function MyProfilePage(){
   )
 }
 
-function ParticipantsPage({ participants, isAdmin }) {
+/* Participants with photo thumbnail */
+function ParticipantsPage({ participants, isAdmin, latestPhotoByPid }) {
   return (
     <div className="container">
       <div className="card" style={{padding:16}}>
         <div style={{fontWeight:800, marginBottom:8}}>Participants</div>
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Gender</th><th>Height</th></tr></thead>
+          <thead><tr><th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Gender</th><th>Height</th></tr></thead>
           <tbody>
             {participants.map(p=>(
               <tr key={p.id}>
+                <td>
+                  {latestPhotoByPid[p.id]
+                    ? <img src={latestPhotoByPid[p.id]} alt=""
+                        style={{width:54, height:54, objectFit:'cover', borderRadius:8}}
+                        onError={(e)=>{ e.currentTarget.src = FALLBACK_SVG }} />
+                    : <img src={FALLBACK_SVG} alt="" style={{width:54, height:54, objectFit:'cover', borderRadius:8}}/>
+                  }
+                </td>
                 <td>{p.name}</td>
                 <td>{p.email||''}</td>
                 <td>{p.phone||''}</td>
@@ -243,6 +308,7 @@ function ParticipantsPage({ participants, isAdmin }) {
   )
 }
 
+/* Attendance placeholder (we can extend later) */
 function AttendancePage() {
   return (
     <div className="container">
@@ -254,13 +320,12 @@ function AttendancePage() {
   )
 }
 
+/* Dashboard simple table (we can enhance with weigh-ins data later) */
 function Dashboard({ participants }) {
-  // Placeholder ranking using current fields (weigh-ins can be added later).
   const rows = participants.map(p => ({
     id: p.id, name: p.name, lossKg: 0, lossWaist: 0, attendanceCount: 0
   }))
   const scored = rows.map((r,i)=>({...r, score: rows.length - i}))
-
   return (
     <div className="container">
       <div className="card" style={{padding:16}}>
@@ -276,7 +341,7 @@ function Dashboard({ participants }) {
   )
 }
 
-/* ---------------- Admin Page: edit & delete participants ---------------- */
+/* Admin Page: edit/delete + add weigh-ins */
 function AdminPage() {
   const [user, setUser] = React.useState(null)
   const [isAdminState, setIsAdminState] = React.useState(false)
@@ -284,6 +349,10 @@ function AdminPage() {
   const [loading, setLoading] = React.useState(true)
   const [savingId, setSavingId] = React.useState(null)
   const [deletingId, setDeletingId] = React.useState(null)
+
+  // weigh-in new entry state
+  const [wi, setWi] = React.useState({ participant_id:'', date:'', weight_kg:'', waist_cm:'' })
+  const [wiSaving, setWiSaving] = React.useState(false)
 
   React.useEffect(()=>{
     (async ()=>{
@@ -295,30 +364,18 @@ function AdminPage() {
     })()
   },[])
 
+  async function loadParticipants(){
+    const { data, error } = await supabase
+      .from('participants')
+      .select('*')
+      .order('registered_at', { ascending:false })
+    if (!error) setRows(data || [])
+  }
+
   React.useEffect(()=>{
     if (!isAdminState) return
-    ;(async ()=>{
-      const { data, error } = await supabase
-        .from('participants')
-        .select('*')
-        .order('registered_at', { ascending:false })
-      if (!error) setRows(data || [])
-    })()
+    loadParticipants()
   },[isAdminState])
-
-  async function signIn() {
-    const email = prompt('Enter your admin email for a sign-in link:')
-    if (!email) return
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser:false, emailRedirectTo: window.location.origin }
-    })
-    alert(error ? error.message : 'Check your email and open it here, then reload.')
-  }
-
-  function editLocal(id, patch) {
-    setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))
-  }
 
   async function saveRow(r) {
     setSavingId(r.id)
@@ -342,6 +399,24 @@ function AdminPage() {
     else setRows(prev => prev.filter(r => r.id !== id))
   }
 
+  async function addWeighIn(e){
+    e.preventDefault()
+    if (!wi.participant_id) { alert('Choose a participant'); return }
+    if (!wi.date) { alert('Choose a date'); return }
+    setWiSaving(true)
+    const payload = {
+      participant_id: wi.participant_id,
+      date: wi.date,
+      weight_kg: wi.weight_kg ? Number(wi.weight_kg) : null,
+      waist_cm: wi.waist_cm ? Number(wi.waist_cm) : null
+    }
+    const { error } = await supabase.from('weigh_ins').insert(payload)
+    setWiSaving(false)
+    if (error) { alert(error.message); return }
+    alert('Weigh-in saved!')
+    setWi({ participant_id:'', date:'', weight_kg:'', waist_cm:'' })
+  }
+
   if (loading) return <div className="container"><div className="card" style={{padding:16}}>Loading…</div></div>
   if (!user || !isAdminState) {
     return (
@@ -349,7 +424,7 @@ function AdminPage() {
         <div className="card" style={{padding:16}}>
           <div style={{fontWeight:800, marginBottom:8}}>Admin</div>
           <p>You must be signed-in as an admin to access this page.</p>
-          <button className="btn" onClick={signIn}>Sign in as admin</button>
+          <NavLink to="/admin-login"><button className="btn">Go to admin login</button></NavLink>
         </div>
       </div>
     )
@@ -357,6 +432,23 @@ function AdminPage() {
 
   return (
     <div className="container">
+      <div className="card" style={{padding:16, marginBottom:12}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Add Weigh-in (Mon/Fri or any date)</div>
+        <form onSubmit={addWeighIn} style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr', gap:8}}>
+          <select className="input" value={wi.participant_id} onChange={e=>setWi({...wi, participant_id:e.target.value})} required>
+            <option value="">— Select participant —</option>
+            {rows.map(r=> <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <input className="input" type="date" value={wi.date} onChange={e=>setWi({...wi, date:e.target.value})} required />
+          <input className="input" type="number" step="0.1" placeholder="Weight (kg)" value={wi.weight_kg} onChange={e=>setWi({...wi, weight_kg:e.target.value})} required />
+          <input className="input" type="number" step="0.1" placeholder="Waist (cm)" value={wi.waist_cm} onChange={e=>setWi({...wi, waist_cm:e.target.value})} required />
+          <button className="btn" disabled={wiSaving}>{wiSaving ? 'Saving…' : 'Save weigh-in'}</button>
+        </form>
+        <div style={{fontSize:12, color:'#475569', marginTop:6}}>
+          Tip: Only admins can create/update data. RLS protects weigh-ins from non-admin edits.
+        </div>
+      </div>
+
       <div className="card" style={{padding:16}}>
         <div style={{fontWeight:800, marginBottom:8}}>Admin — Participants</div>
         <table>
@@ -369,17 +461,17 @@ function AdminPage() {
           <tbody>
             {rows.map(r=>(
               <tr key={r.id}>
-                <td><input className="input" value={r.name||''} onChange={e=>editLocal(r.id,{name:e.target.value})}/></td>
-                <td><input className="input" type="email" value={r.email||''} onChange={e=>editLocal(r.id,{email:e.target.value})}/></td>
-                <td><input className="input" value={r.phone||''} onChange={e=>editLocal(r.id,{phone:e.target.value})}/></td>
+                <td><input className="input" value={r.name||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,name:e.target.value}:x))}/></td>
+                <td><input className="input" type="email" value={r.email||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,email:e.target.value}:x))}/></td>
+                <td><input className="input" value={r.phone||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,phone:e.target.value}:x))}/></td>
                 <td>
-                  <select className="input" value={r.gender||''} onChange={e=>editLocal(r.id,{gender:e.target.value})}>
+                  <select className="input" value={r.gender||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,gender:e.target.value}:x))}>
                     <option value="">—</option><option value="male">Male</option><option value="female">Female</option>
                   </select>
                 </td>
-                <td><input className="input" type="number" step="0.1" value={r.height_cm||''} onChange={e=>editLocal(r.id,{height_cm:e.target.value})}/></td>
-                <td><input className="input" type="number" step="0.1" value={r.start_weight_kg||''} onChange={e=>editLocal(r.id,{start_weight_kg:e.target.value})}/></td>
-                <td><input className="input" type="number" step="0.1" value={r.start_waist_cm||''} onChange={e=>editLocal(r.id,{start_waist_cm:e.target.value})}/></td>
+                <td><input className="input" type="number" step="0.1" value={r.height_cm||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,height_cm:e.target.value}:x))}/></td>
+                <td><input className="input" type="number" step="0.1" value={r.start_weight_kg||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,start_weight_kg:e.target.value}:x))}/></td>
+                <td><input className="input" type="number" step="0.1" value={r.start_waist_cm||''} onChange={e=>setRows(prev=>prev.map(x=>x.id===r.id?{...x,start_waist_cm:e.target.value}:x))}/></td>
                 <td style={{whiteSpace:'nowrap'}}>
                   <button className="btn" disabled={savingId===r.id} onClick={()=>saveRow(r)}>{savingId===r.id?'Saving…':'Save'}</button>
                   <span style={{display:'inline-block', width:8}}/>
@@ -395,11 +487,12 @@ function AdminPage() {
   )
 }
 
-/* ---------------- App root ---------------- */
+/* ---------------- App root: fetch participants + latest photos ---------------- */
 export default function App(){
   const [user, setUser] = React.useState(null)
   const [participants, setParticipants] = React.useState([])
   const [admin, setAdmin] = React.useState(false)
+  const [latestPhotoByPid, setLatestPhotoByPid] = React.useState({})
 
   React.useEffect(()=>{
     supabase.auth.getUser().then(({data})=> setUser(data?.user || null))
@@ -407,8 +500,23 @@ export default function App(){
   React.useEffect(()=>{
     (async ()=>{
       const ok = await isAdmin(); setAdmin(ok)
-      const { data: ps } = await supabase.from('participants').select('*').order('registered_at', { ascending:false })
+
+      const { data: ps } = await supabase
+        .from('participants')
+        .select('*')
+        .order('registered_at', { ascending:false })
       setParticipants(ps || [])
+
+      const { data: ph } = await supabase
+        .from('photos')
+        .select('participant_id, public_url, inserted_at')
+        .order('inserted_at', { ascending:false })
+
+      const map = {}
+      ;(ph || []).forEach(row=>{
+        if (!map[row.participant_id]) map[row.participant_id] = row.public_url
+      })
+      setLatestPhotoByPid(map)
     })()
   },[])
 
@@ -418,11 +526,13 @@ export default function App(){
       <Routes>
         <Route path="/" element={<Dashboard participants={participants} />} />
         <Route path="/dashboard" element={<Dashboard participants={participants} />} />
-        <Route path="/participants" element={<ParticipantsPage participants={participants} isAdmin={admin} />} />
+        <Route path="/participants" element={<ParticipantsPage participants={participants} isAdmin={admin} latestPhotoByPid={latestPhotoByPid} />} />
         <Route path="/attendance" element={<AttendancePage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/my-profile" element={<MyProfilePage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin-login" element={<AdminLoginPage />} />
+        <Route path="/qr" element={<QRPage />} />
       </Routes>
     </>
   )
