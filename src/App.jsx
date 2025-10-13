@@ -14,6 +14,19 @@ const FALLBACK_SVG =
        </text>
      </svg>`
   )
+const [user, setUser] = React.useState(null)
+const [admin, setAdmin] = React.useState(false)
+
+React.useEffect(()=>{
+  supabase.auth.getUser().then(({data})=> setUser(data?.user || null))
+},[])
+
+React.useEffect(()=>{
+  (async ()=>{
+    const { data } = await supabase.rpc('is_admin')   // or your existing isAdmin() helper
+    setAdmin(!!data)
+  })()
+},[])
 
 async function isAdmin() {
   const { data, error } = await supabase.rpc('is_admin')
