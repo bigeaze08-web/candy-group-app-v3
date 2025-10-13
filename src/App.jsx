@@ -678,4 +678,5 @@ function AttendanceAdminPage(){
 <Route path="/admin/attendance" element={<AttendanceAdminPage />} />
 
 // in your header, when admin === true
-{admin && <NavLink to="/admin/attendance" className={({isActive})=> isActive ? 'active' : undefined}>Attendance</NavLink>}
+{isAdmin && <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>Attendance</NavLink>}
+
