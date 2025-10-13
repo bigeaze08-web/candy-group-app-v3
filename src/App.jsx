@@ -71,6 +71,7 @@ function Header({ user, admin }) {
     </header>
   )
 }
+<Header user={user} admin={admin} />
 
 
       {/* separate nav bar under header */}
