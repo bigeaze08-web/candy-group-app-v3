@@ -74,6 +74,7 @@ function Header({ user, admin }) {
 <Header user={user} admin={admin} />
 
 
+
       {/* separate nav bar under header */}
       <div style={{borderTop:'1px solid #e2e8f0', background:'#fff'}}>
         <nav className="inner" style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', padding:'8px 16px', maxWidth:1100, margin:'0 auto'}}>
