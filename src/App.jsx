@@ -4,37 +4,42 @@ import supabase from './supabase'
 
 /* ----------------- Header ----------------- */
 function Header({ user, admin }) {
+function Header({ user, admin }) {
   return (
     <header style={{position:'sticky',top:0,background:'rgba(241,245,249,.9)',backdropFilter:'saturate(180%) blur(8px)',borderBottom:'1px solid #e2e8f0', zIndex:10}}>
-      <div className="inner" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12, maxWidth:1100, margin:'0 auto', padding:'10px 16px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
+      <div className="inner" style={{maxWidth:1100, margin:'0 auto', padding:'10px 16px'}}>
+        {/* Row 1: brand */}
+        <div style={{display:'flex',alignItems:'center',gap:12, marginBottom:8}}>
           <img src="/logo.jpg" alt="Candy Logo" style={{height:72, borderRadius:12}} />
           <div style={{fontWeight:800, fontSize:28}}>Candy Weight Loss Challenge</div>
         </div>
 
+        {/* Row 2: nav (tabs) */}
         <nav style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
           <NavLink to="/dashboard" className={({isActive})=> isActive? 'active' : undefined }>Dashboard</NavLink>
           <NavLink to="/participants" className={({isActive})=> isActive? 'active' : undefined }>Participants</NavLink>
           <NavLink to="/register" className={({isActive})=> isActive? 'active' : undefined }>Register</NavLink>
           <NavLink to="/my-profile" className={({isActive})=> isActive? 'active' : undefined }>My Profile</NavLink>
+
+          {/* Admin-only attendance tab */}
           {admin && (
             <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>
               Attendance
             </NavLink>
           )}
-          {!admin && (
-            <NavLink to="/admin/signin" className={({isActive})=> isActive? 'active' : undefined }>
-              Admin sign in
-            </NavLink>
+
+          {/* Sign out button stays on the right side of the nav */}
+          {user && (
+            <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>
+              Sign out
+            </button>
           )}
-          {user ? (
-            <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>Sign out</button>
-          ) : null}
         </nav>
       </div>
     </header>
   )
 }
+
 
 /* ----------------- Admin sign in (email + password) ----------------- */
 function AdminSignInPage(){
