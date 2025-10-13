@@ -5,5 +5,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
 })
+supabase.storage.from('photos')  // 'photos' must match the bucket you just created
 
 
