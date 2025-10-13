@@ -537,3 +537,66 @@ export default function App(){
     </>
   )
 }
+function AttendanceAdminPage(){
+  const [ok, setOk] = React.useState(false)
+  const [parts, setParts] = React.useState([])
+  const [date, setDate] = React.useState('')
+  const [present, setPresent] = React.useState({})
+  const [saving, setSaving] = React.useState(false)
+  const min='2025-10-13', max='2025-12-05'
+
+  React.useEffect(()=>{ (async ()=>{
+    const admin = await isAdmin(); setOk(admin)
+    const { data: ps } = await supabase.from('participants').select('id,name').order('name')
+    setParts(ps || [])
+  })() },[])
+
+  function isWeekday(iso){ const d=new Date(iso+'T00:00:00'); const w=d.getUTCDay(); return w>=1&&w<=5 }
+  function markAll(v){ const m={}; parts.forEach(p=>m[p.id]=v); setPresent(m) }
+
+  async function save(e){
+    e.preventDefault()
+    if(!date) return alert('Pick a date')
+    if(!isWeekday(date)) return alert('Attendance is Mon–Fri only')
+    const rows = parts.filter(p=>present[p.id]).map(p=>({participant_id:p.id,date, present:true}))
+    if(rows.length===0) return alert('No one marked present')
+
+    setSaving(true)
+    const { error } = await supabase.from('attendance').insert(rows)
+    setSaving(false)
+    if(error) return alert(error.message)
+    alert('Attendance saved')
+    setPresent({})
+  }
+
+  if(!ok) return <BlockedAdmin />  // show your existing "not admin" component
+
+  return (
+    <div className="container">
+      <div className="card" style={{padding:16}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Attendance (Mon–Fri, Oct 13 – Dec 5, 2025)</div>
+        <div style={{display:'flex',gap:8,marginBottom:8}}>
+          <input className="input" type="date" min={min} max={max} value={date} onChange={e=>setDate(e.target.value)} />
+          <button className="btn" onClick={()=>markAll(true)}>Mark all present</button>
+          <button className="btn" onClick={()=>markAll(false)}>Clear all</button>
+        </div>
+        <form onSubmit={save}>
+          <table>
+            <thead><tr><th>Present</th><th>Name</th></tr></thead>
+            <tbody>
+              {parts.map(p=>(
+                <tr key={p.id}>
+                  <td><input type="checkbox" checked={!!present[p.id]} onChange={e=>setPresent(prev=>({...prev,[p.id]:e.target.checked}))} /></td>
+                  <td>{p.name}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+            <button className="btn" disabled={saving}>{saving?'Saving…':'Save attendance'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
