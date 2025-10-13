@@ -21,20 +21,44 @@ async function isAdmin() {
 }
 
 /* ---------------- Header (title smaller; nav below) ---------------- */
-function Header({ user, isAdmin }) {
+function Header({ user, admin }) {
   return (
-    <header style={{position:'sticky', top:0, zIndex:10, background:'rgba(241,245,249,.85)', backdropFilter:'saturate(180%) blur(8px)', borderBottom:'1px solid #e2e8f0'}}>
-      <div className="inner" style={{display:'flex', alignItems:'center', gap:16, padding:'10px 16px', maxWidth:1100, margin:'0 auto'}}>
-        <img
-          src={LOGO_SRC}
-          alt="Candy Weight Loss Challenge"
-          style={{height:120, borderRadius:16}}
-          onError={(e)=>{ e.currentTarget.src = FALLBACK_SVG }}
-        />
-        <div style={{fontWeight:800, fontSize:48, lineHeight:1.1}}>
-          Candy Weight Loss Challenge
+    <header>
+      <div className="inner">
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <img src="/logo.jpg" alt="Candy Group" style={{height:80, borderRadius:12}}/>
+          <div style={{fontWeight:800, fontSize:36}}>Candy Weight Loss Challenge</div>
         </div>
+
+        <nav style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+          <NavLink to="/dashboard" className={({isActive})=> isActive? 'active' : undefined }>Dashboard</NavLink>
+          <NavLink to="/participants" className={({isActive})=> isActive? 'active' : undefined }>Participants</NavLink>
+          <NavLink to="/register" className={({isActive})=> isActive? 'active' : undefined }>Register</NavLink>
+          <NavLink to="/my-profile" className={({isActive})=> isActive? 'active' : undefined }>My Profile</NavLink>
+          {/* Admin-only link lives INSIDE the nav */}
+          {admin && (
+            <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>
+              Attendance
+            </NavLink>
+          )}
+          {user
+            ? <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>Sign out</button>
+            : <button className="btn" onClick={async ()=>{
+                const email = prompt('Enter your email for a sign-in link:')
+                if(!email) return
+                const { error } = await supabase.auth.signInWithOtp({
+                  email,
+                  options: { shouldCreateUser:true, emailRedirectTo: window.location.origin }
+                })
+                alert(error ? error.message : 'Check your email and click the newest link in THIS browser.')
+              }}>Sign in</button>
+          }
+        </nav>
       </div>
+    </header>
+  )
+}
+
 
       {/* separate nav bar under header */}
       <div style={{borderTop:'1px solid #e2e8f0', background:'#fff'}}>
