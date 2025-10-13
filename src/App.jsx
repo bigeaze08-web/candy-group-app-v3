@@ -83,7 +83,13 @@ function Header({ user, admin }) {
           <NavLink to="/register" className={({isActive})=> isActive? 'active' : undefined }>Register</NavLink>
           <NavLink to="/my-profile" className={({isActive})=> isActive? 'active' : undefined }>My Profile</NavLink>
           <NavLink to="/qr" className={({isActive})=> isActive? 'active' : undefined }>QR</NavLink>
-          {isAdmin && <NavLink to="/admin" className={({isActive})=> isActive? 'active' : undefined }>Admin</NavLink>}
+          // inside <nav> … </nav> in Header
+{admin && (
+  <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>
+    Attendance
+  </NavLink>
+)}
+
 
           <div style={{flex:1}} />
           {user
