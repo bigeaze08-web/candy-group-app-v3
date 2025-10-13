@@ -84,6 +84,91 @@ function AttendanceAdminPage(){
   const [checks, setChecks] = React.useState({})
   const [saving, setSaving] = React.useState(false)
 
+  // Build allowed Mon–Fri dates 2025-10-13 .. 2025-12-05
+  const dateOptions = React.useMemo(()=>{
+    const out = []
+    const start = new Date('2025-10-13')
+    const end   = new Date('2025-12-05')
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+      const dow = d.getDay() // 0=Sun..6=Sat
+      if (dow >= 1 && dow <= 5) {
+        const iso = d.toISOString().slice(0,10)
+        out.push({ iso, label: d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) })
+      }
+    }
+    return out
+  },[])
+
+  React.useEffect(()=>{
+    (async ()=>{
+      const { data: isadm } = await supabase.rpc('is_admin').catch(()=>({data:false}))
+      setAdminOk(!!isadm)
+      const { data: ps } = await supabase.from('participants').select('id,name').order('name')
+      setParts(ps || [])
+    })()
+  },[])
+
+  function markAll(v){ const m={}; parts.forEach(p=>m[p.id]=v); setChecks(m) }
+  function toggle(id){ setChecks(prev=> ({...prev, [id]: !prev[id]})) }
+
+  async function save(e){
+    e.preventDefault()
+    if(!date) return alert('Pick a date')
+    const ids = parts.filter(p=>checks[p.id]).map(p=>p.id)
+    if(ids.length===0) return alert('No one marked present')
+
+    const { data, error } = await supabase.rpc('mark_attendance', { d: date, ids })
+    if(error) return alert(error.message)
+    alert(`Attendance saved for ${data} participant(s).`)
+    setChecks({})
+  }
+
+  if(!adminOk){
+    return (
+      <div className="container">
+        <div className="card" style={{padding:16}}>
+          Admins only. Sign in with your admin account/email.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="container">
+      <div className="card" style={{padding:16}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Attendance (Mon–Fri, Oct 13 – Dec 5, 2025)</div>
+
+        <div style={{display:'flex',gap:8,alignItems:'center', marginBottom:8}}>
+          <select className="input" value={date} onChange={e=>setDate(e.target.value)}>
+            <option value="">— Choose a date —</option>
+            {dateOptions.map(o=> <option key={o.iso} value={o.iso}>{o.label} ({o.iso})</option>)}
+          </select>
+          <button className="btn" type="button" onClick={()=>markAll(true)}>Mark all present</button>
+          <button className="btn" type="button" onClick={()=>markAll(false)}>Clear all</button>
+        </div>
+
+        <form onSubmit={save}>
+          <table>
+            <thead><tr><th>Present</th><th>Name</th></tr></thead>
+            <tbody>
+              {parts.map(p=>(
+                <tr key={p.id}>
+                  <td><input type="checkbox" checked={!!checks[p.id]} onChange={()=>toggle(p.id)} /></td>
+                  <td>{p.name}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+            <button className="btn">Save attendance</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+
   // Allowed Mon–Fri dates between 2025-10-13 and 2025-12-05
   const dateOptions = React.useMemo(()=>{
     const out = []
