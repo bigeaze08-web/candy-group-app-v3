@@ -601,5 +601,7 @@ function AttendanceAdminPage(){
         </form>
       </div>
     </div>
+    {admin && <NavLink to="/admin/attendance">Attendance</NavLink>}
+
   )
 }
