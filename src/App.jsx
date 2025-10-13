@@ -532,6 +532,7 @@ export default function App(){
         <Route path="/my-profile" element={<MyProfilePage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/admin-login" element={<AdminLoginPage />} />
+        <Route path="/admin/attendance" element={<AttendanceAdminPage />} />
         <Route path="/qr" element={<QRPage />} />
       </Routes>
     </>
