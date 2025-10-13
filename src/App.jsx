@@ -484,6 +484,8 @@ function AdminPage() {
         <div style={{marginTop:10, fontSize:12, color:'#475569'}}>Only admins can edit or delete participants.</div>
       </div>
     </div>
+    {isAdmin && <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>Attendance</NavLink>}
+
   )
 }
 
