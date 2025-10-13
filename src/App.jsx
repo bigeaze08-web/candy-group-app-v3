@@ -23,6 +23,18 @@ React.useEffect(()=>{
 
 React.useEffect(()=>{
   (async ()=>{
+    const { data } = await supabase.rpc('is_admin').catch(()=>({data:false}))
+    setAdmin(!!data)
+  })()
+},[])
+
+
+React.useEffect(()=>{
+  supabase.auth.getUser().then(({data})=> setUser(data?.user || null))
+},[])
+
+React.useEffect(()=>{
+  (async ()=>{
     const { data } = await supabase.rpc('is_admin')   // or your existing isAdmin() helper
     setAdmin(!!data)
   })()
