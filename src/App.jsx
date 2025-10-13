@@ -605,3 +605,72 @@ function AttendanceAdminPage(){
 
   )
 }
+function AttendanceAdminPage(){
+  const [ok, setOk] = React.useState(false)
+  const [parts, setParts] = React.useState([])
+  const [date, setDate] = React.useState('')
+  const [checks, setChecks] = React.useState({})
+  const [saving, setSaving] = React.useState(false)
+  const min='2025-10-13', max='2025-12-05'
+
+  React.useEffect(()=>{ (async ()=>{
+    // confirm admin
+    const { data } = await supabase.auth.getUser()
+    if (!data?.user) { setOk(false); return }
+    const { data: isadm } = await supabase.rpc('is_admin') // if you have it; else inline check below
+    const admin = !!isadm
+    setOk(admin)
+
+    // load participants
+    const { data: ps } = await supabase.from('participants').select('id,name').order('name')
+    setParts(ps || [])
+  })() },[])
+
+  function markAll(v){ const m={}; parts.forEach(p=>m[p.id]=v); setChecks(m) }
+  function toggle(id){ setChecks(prev=> ({...prev, [id]: !prev[id]})) }
+
+  async function save(e){
+    e.preventDefault()
+    if(!date) return alert('Pick a date')
+    const ids = parts.filter(p=>checks[p.id]).map(p=>p.id)
+    if(ids.length===0) return alert('No one marked present')
+
+    setSaving(true)
+    const { error, data } = await supabase.rpc('mark_attendance', { d: date, ids })
+    setSaving(false)
+    if(error) return alert(error.message)
+    alert(`Attendance saved for ${data} participant(s).`)
+    setChecks({})
+  }
+
+  if(!ok) return <div className="container"><div className="card" style={{padding:16}}>Admins only. Use Admin sign in.</div></div>
+
+  return (
+    <div className="container">
+      <div className="card" style={{padding:16}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Attendance (Mon–Fri, Oct 13 – Dec 5, 2025)</div>
+        <div style={{display:'flex',gap:8,marginBottom:8}}>
+          <input className="input" type="date" min={min} max={max} value={date} onChange={e=>setDate(e.target.value)} />
+          <button className="btn" onClick={()=>markAll(true)}>Mark all present</button>
+          <button className="btn" onClick={()=>markAll(false)}>Clear all</button>
+        </div>
+        <form onSubmit={save}>
+          <table>
+            <thead><tr><th>Present</th><th>Name</th></tr></thead>
+            <tbody>
+              {parts.map(p=>(
+                <tr key={p.id}>
+                  <td><input type="checkbox" checked={!!checks[p.id]} onChange={()=>toggle(p.id)} /></td>
+                  <td>{p.name}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+            <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save attendance'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
