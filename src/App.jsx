@@ -1,6 +1,5 @@
 import { Routes, Route, NavLink } from 'react-router-dom'
 import React from 'react'
-import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
 import supabase from './supabase'
 
 /* ---------------- Small helpers ---------------- */
