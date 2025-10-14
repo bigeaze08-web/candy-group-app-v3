@@ -504,6 +504,8 @@ export default function App(){
         <Route path="/my-profile" element={<MyProfilePage />} />
         <Route path="/admin/signin" element={<AdminSignInPage />} />
         <Route path="/admin/attendance" element={<AttendanceAdminPage />} />
+        <Route path="/admin/weighins" element={<WeighInsAdminPage />} />
+
       </Routes>
     </>
   )
