@@ -508,3 +508,15 @@ export default function App(){
     </>
   )
 }
+{!admin && (
+  <NavLink
+    to="/admin/signin"
+    className={({isActive})=> isActive? 'active' : undefined }
+    style={{
+      background:'#f59e0b', color:'#111827',
+      padding:'6px 10px', borderRadius:8, fontWeight:700
+    }}
+  >
+    Admin sign in
+  </NavLink>
+)}
