@@ -520,3 +520,122 @@ export default function App(){
     Admin sign in
   </NavLink>
 )}
+function WeighInsAdminPage(){
+  const [adminOk, setAdminOk] = React.useState(false)
+  const [parts, setParts] = React.useState([])
+  const [date, setDate] = React.useState('')
+  const [rows, setRows] = React.useState([]) // [{participant_id, weight_kg, waist_cm}]
+  const [saving, setSaving] = React.useState(false)
+
+  // Monday & Friday options only (Oct 13–Dec 5, 2025)
+  const dateOptions = React.useMemo(()=>{
+    const out = []
+    const start = new Date('2025-10-13')
+    const end   = new Date('2025-12-05')
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+      const dow = d.getDay()
+      if (dow === 1 || dow === 5) { // Mon or Fri
+        const iso = d.toISOString().slice(0,10)
+        out.push({ iso, label: d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) })
+      }
+    }
+    return out
+  },[])
+
+  React.useEffect(()=>{
+    (async ()=>{
+      // admin?
+      try {
+        const { data } = await supabase.rpc('is_admin')
+        setAdminOk(!!data)
+      } catch { setAdminOk(false) }
+
+      // participants
+      try {
+        const { data } = await supabase.from('participants').select('id,name').order('name')
+        setParts(data || [])
+        setRows((data||[]).map(p=>({ participant_id: p.id, weight_kg:'', waist_cm:'' })))
+      } catch { setParts([]); setRows([]) }
+    })()
+  },[])
+
+  function setField(pid, key, value){
+    setRows(prev => prev.map(r => r.participant_id===pid ? { ...r, [key]: value } : r))
+  }
+
+  async function save(e){
+    e.preventDefault()
+    if(!date) return alert('Pick a date (Mon or Fri)')
+    // keep only those with at least one number filled
+    const payload = rows.filter(r => r.weight_kg !== '' || r.waist_cm !== '')
+    if(payload.length === 0) return alert('No values entered')
+
+    try{
+      setSaving(true)
+      const { data, error } = await supabase.rpc('upsert_weighins', {
+        d: date,
+        rows: payload
+      })
+      setSaving(false)
+      if(error) return alert(error.message)
+      alert(`Saved ${data} weigh-in(s) for ${date}`)
+    }catch(err){
+      setSaving(false)
+      alert(err.message || 'Failed to save weigh-ins')
+    }
+  }
+
+  if(!adminOk){
+    return <div className="container"><div className="card" style={{padding:16}}>Admins only.</div></div>
+  }
+
+  return (
+    <div className="container">
+      <div className="card" style={{padding:16}}>
+        <div style={{fontWeight:800, marginBottom:8}}>Weigh-Ins (Mon & Fri only)</div>
+        <div style={{display:'flex',gap:8,alignItems:'center', marginBottom:8}}>
+          <select className="input" value={date} onChange={e=>setDate(e.target.value)}>
+            <option value="">— Choose a date —</option>
+            {dateOptions.map(o=> <option key={o.iso} value={o.iso}>{o.label} ({o.iso})</option>)}
+          </select>
+        </div>
+
+        <form onSubmit={save}>
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Weight (kg)</th><th>Waist (cm)</th></tr>
+            </thead>
+            <tbody>
+              {parts.map(p=>{
+                const r = rows.find(x=>x.participant_id===p.id) || {weight_kg:'',waist_cm:''}
+                return (
+                  <tr key={p.id}>
+                    <td>{p.name}</td>
+                    <td>
+                      <input className="input" type="number" step="0.1"
+                        value={r.weight_kg}
+                        onChange={e=>setField(p.id, 'weight_kg', e.target.value)}
+                        placeholder="e.g. 82.4"
+                      />
+                    </td>
+                    <td>
+                      <input className="input" type="number" step="0.1"
+                        value={r.waist_cm}
+                        onChange={e=>setField(p.id, 'waist_cm', e.target.value)}
+                        placeholder="e.g. 92.0"
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+            <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save weigh-ins'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
