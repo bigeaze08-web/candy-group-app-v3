@@ -17,13 +17,14 @@ function Header({ user, admin }) {
         <nav>
           <Link to="/dashboard">Dashboard</Link>
           <Link to="/participants">Participants</Link>
+          <Link to="/register">Register</Link>
           {admin && <Link to="/admin/attendance">Attendance</Link>}
           {admin && <Link to="/admin/weighins">Weigh-Ins</Link>}
           {user
             ? <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>Sign out</button>
             : <button className="btn" onClick={async ()=>{
-                const email = prompt('Enter email')
-                const password = prompt('Enter password')
+                const email = prompt('Admin/participant email:')
+                const password = prompt('Password:')
                 if(!email || !password) return
                 const { error } = await supabase.auth.signInWithPassword({ email, password })
                 alert(error ? error.message : 'Signed in!')
@@ -36,26 +37,154 @@ function Header({ user, admin }) {
   )
 }
 
+/* ---------------- Helpers ---------------- */
+async function uploadToPhotos(participantId, file){
+  if(!file) return null
+  const safe = file.name.replace(/\s+/g,'_')
+  const path = `participants/${participantId}/${Date.now()}_${safe}`
+  const { error: upErr } = await supabase.storage
+    .from('photos')
+    .upload(path, file, { upsert:true, cacheControl:'3600', contentType:file.type })
+  if (upErr) throw new Error(upErr.message)
+  const { data: pub } = await supabase.storage.from('photos').getPublicUrl(path)
+  if(!pub?.publicUrl) throw new Error('No public URL')
+  const { error: updErr } = await supabase.from('participants')
+    .update({ photo_url: pub.publicUrl })
+    .eq('id', participantId)
+  if (updErr) throw new Error(updErr.message)
+  return pub.publicUrl
+}
+
+/* ---------------- Register (with photo) ---------------- */
+function RegisterPage(){
+  const [email, setEmail] = React.useState('')
+  const [password, setPassword] = React.useState('')
+  const [form, setForm] = React.useState({
+    name:'', phone:'', gender:'', height_cm:'', start_weight_kg:'', start_waist_cm:''
+  })
+  const [photo, setPhoto] = React.useState(null)
+  const [busy, setBusy] = React.useState(false)
+  const navigate = useNavigate()
+
+  async function ensureSignedIn(email, password){
+    const { data: sess } = await supabase.auth.getSession()
+    if(sess?.session) return sess.session.user
+    // try sign-up; if user exists, sign-in
+    const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+      email, password, options: { emailRedirectTo: window.location.origin }
+    })
+    if (!signUpErr && signUpData?.user) {
+      // if email confirmation is on, user may need to confirm; but we continue (session is present)
+      return signUpData.user
+    }
+    // fallback: sign-in
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+    if (signInErr) throw new Error(signInErr.message)
+    return signInData.user
+  }
+
+  async function onSubmit(e){
+    e.preventDefault()
+    if(!email || !password) return alert('Email and password are required')
+    if(!form.name) return alert('Please enter your full name')
+    setBusy(true)
+    try {
+      const user = await ensureSignedIn(email, password)
+
+      // create participant row (if not exists)
+      const row = {
+        name: form.name,
+        email: email,
+        phone: form.phone || null,
+        gender: form.gender || null,
+        height_cm: form.height_cm ? Number(form.height_cm) : null,
+        start_weight_kg: form.start_weight_kg ? Number(form.start_weight_kg) : null,
+        start_waist_cm: form.start_waist_cm ? Number(form.start_waist_cm) : null
+      }
+      // upsert by email
+      const { data: existing } = await supabase.from('participants')
+        .select('id').eq('email', email).limit(1)
+      let pid = existing?.[0]?.id
+      if(!pid){
+        const { data: ins, error: insErr } = await supabase.from('participants').insert(row).select('id').single()
+        if (insErr) throw new Error(insErr.message)
+        pid = ins.id
+      } else {
+        await supabase.from('participants').update(row).eq('id', pid)
+      }
+
+      // upload photo (optional)
+      if (photo) {
+        await uploadToPhotos(pid, photo)
+      }
+
+      alert('Registered successfully!')
+      navigate('/participants')
+    } catch(err){
+      alert(err.message || 'Failed to register')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="container">
+      <div className="card">
+        <div style={{fontWeight:800, marginBottom:8}}>Register</div>
+        <form onSubmit={onSubmit}>
+          <div className="rowgrid">
+            <div>
+              <div style={{fontWeight:700, marginBottom:6}}>Account</div>
+              <input className="input" type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
+              <input className="input" type="password" placeholder="Password" value={password} onChange={e=>setPassword(e.target.value)} required />
+              <div style={{fontSize:12, color:'#475569'}}>Use an email you can access; you’ll use this to sign in.</div>
+            </div>
+            <div>
+              <div style={{fontWeight:700, marginBottom:6}}>Profile</div>
+              <input className="input" placeholder="Full name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} required />
+              <input className="input" placeholder="Phone" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} />
+              <select className="input" value={form.gender} onChange={e=>setForm({...form,gender:e.target.value})}>
+                <option value="">— Gender —</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+              <input className="input" type="number" step="0.1" placeholder="Height (cm)" value={form.height_cm} onChange={e=>setForm({...form,height_cm:e.target.value})} />
+            </div>
+            <div>
+              <div style={{fontWeight:700, marginBottom:6}}>Starting measurements</div>
+              <input className="input" type="number" step="0.1" placeholder="Start weight (kg)" value={form.start_weight_kg} onChange={e=>setForm({...form,start_weight_kg:e.target.value})} />
+              <input className="input" type="number" step="0.1" placeholder="Start waist (cm)" value={form.start_waist_cm} onChange={e=>setForm({...form,start_waist_cm:e.target.value})} />
+              <div style={{fontWeight:700, margin:'8px 0 4px'}}>Photo</div>
+              <input className="input" type="file" accept="image/*" capture="environment" onChange={e=> setPhoto(e.target.files?.[0] || null) } />
+              <div style={{fontSize:12, color:'#475569'}}>Attach a clear face/body photo for your profile.</div>
+            </div>
+          </div>
+          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+            <button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Register now'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 /* ---------------- Dashboard (70/20/10) ---------------- */
 function Dashboard(){
   const [rows, setRows] = React.useState([])
 
   React.useEffect(()=>{
     (async ()=>{
-      // Get participants
       const { data: ps } = await supabase
         .from('participants')
         .select('id,name,start_weight_kg,start_waist_cm')
         .order('name')
 
-      // Get latest weigh-in (via view if present; else compute)
       let latest = []
       const viewRes = await supabase.from('latest_weighin_per_participant')
         .select('participant_id,date,weight_kg,waist_cm')
       if(!viewRes.error && viewRes.data) {
         latest = viewRes.data
       } else {
-        // fallback: fetch all weigh_ins (could be heavy for big datasets)
         const { data: allWi } = await supabase.from('weigh_ins').select('participant_id,date,weight_kg,waist_cm')
         const m = new Map()
         ;(allWi||[]).forEach(w=>{
@@ -66,7 +195,6 @@ function Dashboard(){
         latest = Array.from(m.values())
       }
 
-      // Get attendance for the contest window
       const { data: att } = await supabase
         .from('attendance')
         .select('participant_id,date')
@@ -93,7 +221,6 @@ function Dashboard(){
         return { id:p.id, name:p.name, lossKg, lossWa, attendance }
       })
 
-      // rank by each metric, then score 70/20/10
       function ranking(arr, key){
         const s=[...arr].sort((a,b)=> b[key]-a[key])
         const pos=new Map(); s.forEach((r,i)=>pos.set(r.id,i+1)); return pos
@@ -128,35 +255,85 @@ function Dashboard(){
   )
 }
 
-/* ---------------- Participants ---------------- */
+/* ---------------- Participants (thumbnails + ADMIN inline edit) ---------------- */
 function ParticipantsPage(){
   const [ps, setPs] = React.useState([])
+  const [admin, setAdmin] = React.useState(false)
+  const [savingId, setSavingId] = React.useState(null)
+
   React.useEffect(()=>{
-    supabase.from('participants')
-      .select('id,name,phone,gender,start_weight_kg')
-      .order('registered_at',{ascending:false})
-      .then(({data})=> setPs(data||[]))
+    ;(async ()=>{
+      try { const { data } = await supabase.rpc('is_admin'); setAdmin(!!data) } catch { setAdmin(false) }
+      const { data: rows } = await supabase
+        .from('participants')
+        .select('id,name,email,phone,gender,start_weight_kg,start_waist_cm,photo_url')
+        .order('registered_at',{ascending:false})
+      setPs(rows||[])
+    })()
   },[])
+
+  function setField(id, key, value){
+    setPs(prev => prev.map(x => x.id===id ? ({...x, [key]: value}) : x))
+  }
+
+  async function onUpload(p, file){
+    if (!file) return
+    try{
+      const url = await uploadToPhotos(p.id, file)
+      setPs(prev => prev.map(x => x.id===p.id ? { ...x, photo_url: url } : x))
+      alert('Photo uploaded!')
+    }catch(err){
+      alert(err.message || 'Failed to upload')
+    }
+  }
+
+  async function saveRow(p){
+    setSavingId(p.id)
+    const { error } = await supabase.from('participants').update({
+      email: p.email, phone: p.phone, start_weight_kg: p.start_weight_kg ? Number(p.start_weight_kg) : null,
+      start_waist_cm: p.start_waist_cm ? Number(p.start_waist_cm) : null
+    }).eq('id', p.id)
+    setSavingId(null)
+    if(error) alert(error.message); else alert('Saved!')
+  }
+
   return (
     <div className="container">
       <div className="card">
         <div style={{fontWeight:800, marginBottom:8}}>Participants</div>
         <table>
-          <thead><tr><th>Name</th><th>Phone</th><th>Gender</th><th>Start weight (kg)</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Gender</th>
+              <th>Start weight (kg)</th><th>Start waist (cm)</th>{admin && <th>Upload</th>}{admin && <th>Save</th>}
+            </tr>
+          </thead>
           <tbody>
             {ps.map(p=>(
               <tr key={p.id}>
-                <td>{p.name}</td><td>{p.phone||''}</td><td>{p.gender||''}</td><td>{p.start_weight_kg ?? ''}</td>
+                <td>{p.photo_url
+                  ? <img src={p.photo_url} alt={p.name} className="thumb"/>
+                  : <div className="thumb" style={{display:'flex',alignItems:'center',justifyContent:'center',color:'#475569',fontSize:12}}>No photo</div>}
+                </td>
+                <td>{p.name}</td>
+                <td>{admin ? <input className="input" value={p.email||''} onChange={e=>setField(p.id,'email',e.target.value)} /> : (p.email||'')}</td>
+                <td>{admin ? <input className="input" value={p.phone||''} onChange={e=>setField(p.id,'phone',e.target.value)} /> : (p.phone||'')}</td>
+                <td>{p.gender||''}</td>
+                <td>{admin ? <input className="input" type="number" step="0.1" value={p.start_weight_kg??''} onChange={e=>setField(p.id,'start_weight_kg',e.target.value)} /> : (p.start_weight_kg??'')}</td>
+                <td>{admin ? <input className="input" type="number" step="0.1" value={p.start_waist_cm??''} onChange={e=>setField(p.id,'start_waist_cm',e.target.value)} /> : (p.start_waist_cm??'')}</td>
+                {admin && <td><input type="file" accept="image/*" onChange={e=> onUpload(p, e.target.files?.[0]) } /></td>}
+                {admin && <td><button className="btn" disabled={savingId===p.id} onClick={()=>saveRow(p)}>{savingId===p.id?'Saving…':'Save'}</button></td>}
               </tr>
             ))}
           </tbody>
         </table>
+        {!admin && <div style={{marginTop:8,fontSize:12,color:'#475569'}}>Only admins can edit or upload photos here.</div>}
       </div>
     </div>
   )
 }
 
-/* ---------------- Admin: Attendance ---------------- */
+/* ---------------- Admin: Attendance (Mon–Fri) ---------------- */
 function AttendanceAdminPage(){
   const [adminOk, setAdminOk] = React.useState(false)
   const [parts, setParts] = React.useState([])
@@ -169,7 +346,7 @@ function AttendanceAdminPage(){
     const start = new Date('2025-10-13')
     const end   = new Date('2025-12-05')
     for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
-      const dow = d.getDay() // 1..5 = Mon..Fri
+      const dow = d.getDay()
       if (dow >= 1 && dow <= 5) {
         const iso = d.toISOString().slice(0,10)
         out.push({ iso, label: d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) })
@@ -264,7 +441,6 @@ function WeighInsAdminPage(){
     (async ()=>{
       const { data } = await supabase.rpc('is_admin')
       setAdminOk(!!data)
-
       const { data: ps, error } = await supabase
         .from('participants')
         .select('id,name')
@@ -353,6 +529,7 @@ export default function App(){
       <Routes>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/participants" element={<ParticipantsPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/admin/attendance" element={<AttendanceAdminPage />} />
         <Route path="/admin/weighins" element={<WeighInsAdminPage />} />
         <Route path="*" element={<div className="container"><div className="card">Page not found.</div></div>} />
@@ -360,4 +537,3 @@ export default function App(){
     </>
   )
 }
-
