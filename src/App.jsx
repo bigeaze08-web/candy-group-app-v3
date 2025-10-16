@@ -1,92 +1,77 @@
 import React from 'react'
-import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
-import App from './App.jsx'
+import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
+import supabase from './supabase'
 
-createRoot(document.getElementById('root')).render(
-  <BrowserRouter>
-    <App />
-  </BrowserRouter>
-)
-
-
-/* ============== Small helpers so the UI never hard-crashes ============== */
+/* ==================== Helpers (safe, no crash) ==================== */
 async function getUserSafe() {
-  try {
-    const { data } = await supabase.auth.getUser()
-    return data?.user || null
-  } catch { return null }
+  try { const { data } = await supabase.auth.getUser(); return data?.user || null }
+  catch { return null }
 }
 async function isAdminSafe() {
-  try {
-    const { data } = await supabase.rpc('is_admin')
-    return !!data
-  } catch { return false }
+  try { const { data } = await supabase.rpc('is_admin'); return !!data }
+  catch { return false }
 }
 async function loadParticipantsSafe() {
   try {
-    const { data, error } = await supabase
-      .from('participants')
-      .select('*')
-      .order('registered_at', { ascending: false })
+    const { data, error } = await supabase.from('participants').select('*').order('registered_at', { ascending:false })
     if (error) throw error
     return data || []
   } catch { return [] }
 }
 async function loadWeighInsSafe() {
   try {
-    const { data, error } = await supabase
-      .from('weigh_ins')
-      .select('participant_id, weight_kg, waist_cm, date')
+    const { data, error } = await supabase.from('weigh_ins').select('participant_id, weight_kg, waist_cm, date')
     if (error) throw error
     return data || []
   } catch { return [] }
 }
 async function loadAttendanceSafe() {
   try {
-    const { data, error } = await supabase
-      .from('attendance')
-      .select('participant_id, date')
+    const { data, error } = await supabase.from('attendance').select('participant_id, date')
     if (error) throw error
     return data || []
   } catch { return [] }
 }
 async function loadPhotosSafe() {
   try {
-    const { data, error } = await supabase
-      .from('photos')
-      .select('participant_id, public_url, created_at')
+    const { data, error } = await supabase.from('photos').select('participant_id, public_url, created_at')
     if (error) throw error
     return data || []
   } catch { return [] }
 }
 
-/* ============================ Header (tabs) ============================= */
+/* ======================== UI: Header ======================== */
 function Header({ user, admin }) {
   return (
-    <header style={{position:'sticky',top:0,background:'rgba(241,245,249,.9)',backdropFilter:'saturate(180%) blur(8px)',borderBottom:'1px solid #e2e8f0', zIndex:10}}>
-      <div className="inner" style={{maxWidth:1100, margin:'0 auto', padding:'10px 16px'}}>
-        {/* Row 1: brand */}
+    <header>
+      <div className="inner">
         <div style={{display:'flex',alignItems:'center',gap:12, marginBottom:8}}>
           <img src="/logo.jpg" alt="Candy Logo" style={{height:64, borderRadius:12}} />
           <div style={{fontWeight:800, fontSize:26}}>Candy Weight Loss Challenge</div>
         </div>
-        {/* Row 2: tabs */}
         <nav style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
           <NavLink to="/dashboard" className={({isActive})=> isActive? 'active' : undefined }>Dashboard</NavLink>
           <NavLink to="/participants" className={({isActive})=> isActive? 'active' : undefined }>Participants</NavLink>
           <NavLink to="/register" className={({isActive})=> isActive? 'active' : undefined }>Register</NavLink>
           <NavLink to="/my-profile" className={({isActive})=> isActive? 'active' : undefined }>My Profile</NavLink>
+
           {admin && (
-            <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>
-              Attendance
-            </NavLink>
+            <>
+              <NavLink to="/admin/attendance" className={({isActive})=> isActive? 'active' : undefined }>Attendance</NavLink>
+              <NavLink to="/admin/weighins" className={({isActive})=> isActive? 'active' : undefined }>Weigh-Ins</NavLink>
+            </>
           )}
+
           {!admin && (
-            <NavLink to="/admin/signin" className={({isActive})=> isActive? 'active' : undefined }>
+            <NavLink
+              to="/admin/signin"
+              className={({isActive})=> isActive? 'active' : undefined }
+              style={{background:'#f59e0b', color:'#111827', padding:'6px 10px', borderRadius:8, fontWeight:700}}
+            >
               Admin sign in
             </NavLink>
           )}
+
           {user && (
             <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>
               Sign out
@@ -98,7 +83,7 @@ function Header({ user, admin }) {
   )
 }
 
-/* ============================== Dashboard ============================== */
+/* ====================== Dashboard (70/20/10) ====================== */
 function Dashboard(){
   const [rows, setRows] = React.useState([])
   const [loading, setLoading] = React.useState(true)
@@ -112,20 +97,15 @@ function Dashboard(){
         loadAttendanceSafe()
       ])
 
-      // Latest weigh-in per participant
       const latestByPid = {}
       for (const w of weighIns) {
-        const key = w.participant_id
-        if (!latestByPid[key] || (w.date > latestByPid[key].date)) latestByPid[key] = w
+        const k = w.participant_id
+        if (!latestByPid[k] || w.date > latestByPid[k].date) latestByPid[k] = w
       }
 
-      // Attendance count per participant
       const attCount = {}
-      for (const a of attendance) {
-        attCount[a.participant_id] = (attCount[a.participant_id] || 0) + 1
-      }
+      for (const a of attendance) attCount[a.participant_id] = (attCount[a.participant_id] || 0) + 1
 
-      // Build rows
       const calc = participants.map(p=>{
         const startW = Number(p.start_weight_kg ?? 0)
         const startWaist = Number(p.start_waist_cm ?? 0)
@@ -138,48 +118,35 @@ function Dashboard(){
         return { id:p.id, name:p.name, lossKg, lossWaist, attendanceCount }
       })
 
-      // Rank-based score (higher is better)
-      function rankMap(arr, key){
+      function rmap(arr, key){
         const s=[...arr].sort((a,b)=> b[key]-a[key])
-        const m=new Map()
-        s.forEach((r,i)=> m.set(r.id, i+1))
-        return m
+        const m=new Map(); s.forEach((r,i)=> m.set(r.id, i+1)); return m
       }
-      const rW = rankMap(calc,'lossKg')
-      const rWa = rankMap(calc,'lossWaist')
-      const rAt = rankMap(calc,'attendanceCount')
+      const rW = rmap(calc,'lossKg'), rWa = rmap(calc,'lossWaist'), rAt = rmap(calc,'attendanceCount')
       const N = Math.max(1, calc.length)
+      const scored = calc
+        .map(r => ({
+          ...r,
+          score: ((N - (rW.get(r.id)||N) + 1)*0.7)
+               + ((N - (rWa.get(r.id)||N) + 1)*0.2)
+               + ((N - (rAt.get(r.id)||N) + 1)*0.1)
+        }))
+        .sort((a,b)=> b.score - a.score)
 
-      const scored = calc.map(r => ({
-        ...r,
-        score: ((N - (rW.get(r.id)||N) + 1)*0.7)
-             + ((N - (rWa.get(r.id)||N) + 1)*0.2)
-             + ((N - (rAt.get(r.id)||N) + 1)*0.1)
-      })).sort((a,b)=> b.score - a.score)
-
-      setRows(scored)
-      setLoading(false)
+      setRows(scored); setLoading(false)
     })()
   },[])
 
   return (
     <div className="container">
-      <div className="card" style={{padding:16}}>
+      <div className="card">
         <div style={{fontWeight:800, marginBottom:8}}>Dashboard — Leaderboard</div>
         {loading ? <div>Loading…</div> : (
           <table>
-            <thead>
-              <tr><th>Rank</th><th>Name</th><th>Kg lost</th><th>Waist cm lost</th><th>Attendance</th></tr>
-            </thead>
+            <thead><tr><th>Rank</th><th>Name</th><th>Kg lost</th><th>Waist cm lost</th><th>Attendance</th></tr></thead>
             <tbody>
               {rows.map((r,i)=>(
-                <tr key={r.id}>
-                  <td>{i+1}</td>
-                  <td>{r.name}</td>
-                  <td>{r.lossKg.toFixed(1)}</td>
-                  <td>{r.lossWaist.toFixed(1)}</td>
-                  <td>{r.attendanceCount}</td>
-                </tr>
+                <tr key={r.id}><td>{i+1}</td><td>{r.name}</td><td>{r.lossKg.toFixed(1)}</td><td>{r.lossWaist.toFixed(1)}</td><td>{r.attendanceCount}</td></tr>
               ))}
             </tbody>
           </table>
@@ -189,7 +156,7 @@ function Dashboard(){
   )
 }
 
-/* ============================ Participants ============================ */
+/* ========================= Participants ========================= */
 function ParticipantsPage(){
   const [items, setItems] = React.useState([])
   const [thumb, setThumb] = React.useState({}) // pid -> url
@@ -198,8 +165,6 @@ function ParticipantsPage(){
     (async ()=>{
       const ps = await loadParticipantsSafe()
       setItems(ps)
-
-      // Try to load latest photo per participant (optional if you have photos table)
       const allPhotos = await loadPhotosSafe()
       const latest = {}
       for (const ph of allPhotos) {
@@ -214,19 +179,14 @@ function ParticipantsPage(){
 
   return (
     <div className="container">
-      <div className="card" style={{padding:16}}>
+      <div className="card">
         <div style={{fontWeight:800, marginBottom:8}}>Participants</div>
         <table>
           <thead><tr><th>Photo</th><th>Name</th><th>Start weight (kg)</th></tr></thead>
           <tbody>
             {items.map(p=>(
               <tr key={p.id}>
-                <td>
-                  {thumb[p.id]
-                    ? <img src={thumb[p.id]} alt="" style={{height:48,width:48,objectFit:'cover',borderRadius:8}}/>
-                    : <div style={{height:48,width:48,background:'#e2e8f0',borderRadius:8}}/>
-                  }
-                </td>
+                <td>{thumb[p.id] ? <img className="thumb" src={thumb[p.id]} alt="" /> : <span className="thumb" />}</td>
                 <td>{p.name}</td>
                 <td>{p.start_weight_kg ?? ''}</td>
               </tr>
@@ -238,7 +198,7 @@ function ParticipantsPage(){
   )
 }
 
-/* ============================== Register ============================== */
+/* ============================ Register ============================ */
 function RegisterPage(){
   const [form, setForm] = React.useState({
     name:'', email:'', phone:'', gender:'', height_cm:'', start_weight_kg:'', start_waist_cm:''
@@ -268,7 +228,7 @@ function RegisterPage(){
 
   return (
     <div className="container">
-      <div className="card" style={{padding:16, maxWidth:900, margin:'12px auto'}}>
+      <div className="card" style={{maxWidth:900, margin:'0 auto'}}>
         <div style={{fontWeight:800, marginBottom:8}}>Register</div>
         <form onSubmit={submit}>
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
@@ -293,7 +253,7 @@ function RegisterPage(){
   )
 }
 
-/* ============================= My Profile ============================= */
+/* ============================ My Profile ============================ */
 function MyProfilePage(){
   const [user, setUser] = React.useState(null)
   const [p, setP] = React.useState(null)
@@ -329,12 +289,12 @@ function MyProfilePage(){
     alert('Photo uploaded!')
   }
 
-  if (!user) return <div className="container"><div className="card" style={{padding:16}}>Please sign in from Admin or use magic link flow (if enabled).</div></div>
-  if (!p) return <div className="container"><div className="card" style={{padding:16}}>No profile yet. <a href="/register">Register here</a>.</div></div>
+  if (!user) return <div className="container"><div className="card">Please sign in (admin) or ensure your email matches your profile.</div></div>
+  if (!p) return <div className="container"><div className="card">No profile yet. <a href="/register">Register here</a>.</div></div>
 
   return (
     <div className="container">
-      <div className="card" style={{padding:16, maxWidth:900, margin:'12px auto'}}>
+      <div className="card" style={{maxWidth:900, margin:'0 auto'}}>
         <div style={{fontWeight:800, marginBottom:8}}>My profile</div>
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8}}>
           <input className="input" value={p.name||''} onChange={e=>setP({...p,name:e.target.value})} placeholder="Full name" />
@@ -358,9 +318,9 @@ function MyProfilePage(){
   )
 }
 
-/* ============================ Admin Sign-in ============================ */
+/* ========================= Admin Sign-in ========================= */
 function AdminSignInPage(){
-  const [email, setEmail] = React.useState('bigeaze08@gmail.com')
+  const [email, setEmail] = React.useState('') // put admin email or leave blank
   const [password, setPassword] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const nav = useNavigate()
@@ -372,13 +332,13 @@ function AdminSignInPage(){
     setBusy(false)
     if(error) return alert(error.message)
     const ok = await isAdminSafe()
-    if(!ok) { alert('Signed in but not an admin. Add your email to app_admins.'); return }
+    if(!ok) { alert('Signed in but not an admin. Ask owner to add your email to app_admins.'); return }
     nav('/admin/attendance')
   }
 
   return (
     <div className="container">
-      <div className="card" style={{padding:16, maxWidth:420, margin:'16px auto'}}>
+      <div className="card" style={{maxWidth:420, margin:'0 auto'}}>
         <div style={{fontWeight:800, marginBottom:8}}>Admin Sign in</div>
         <form onSubmit={submit}>
           <input className="input" type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required />
@@ -392,7 +352,7 @@ function AdminSignInPage(){
   )
 }
 
-/* ====================== Attendance (admin-only) ======================= */
+/* ===================== Attendance (admin-only) ===================== */
 function AttendanceAdminPage(){
   const [adminOk, setAdminOk] = React.useState(false)
   const [parts, setParts] = React.useState([])
@@ -405,7 +365,7 @@ function AttendanceAdminPage(){
     const start = new Date('2025-10-13')
     const end   = new Date('2025-12-05')
     for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
-      const dow = d.getDay()
+      const dow = d.getDay() // 1..5
       if (dow >= 1 && dow <= 5) {
         const iso = d.toISOString().slice(0,10)
         out.push({ iso, label: d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) })
@@ -429,7 +389,6 @@ function AttendanceAdminPage(){
     if(!date) return alert('Pick a date')
     const ids = parts.filter(p=>checks[p.id]).map(p=>p.id)
     if(ids.length===0) return alert('No one marked present')
-
     try {
       setSaving(true)
       const { data, error } = await supabase.rpc('mark_attendance', { d: date, ids })
@@ -443,19 +402,11 @@ function AttendanceAdminPage(){
     }
   }
 
-  if(!adminOk){
-    return (
-      <div className="container">
-        <div className="card" style={{padding:16}}>
-          Admins only. Use Admin sign in with your admin email.
-        </div>
-      </div>
-    )
-  }
+  if(!adminOk) return <div className="container"><div className="card">Admins only.</div></div>
 
   return (
     <div className="container">
-      <div className="card" style={{padding:16}}>
+      <div className="card">
         <div style={{fontWeight:800, marginBottom:8}}>Attendance (Mon–Fri, Oct 13 – Dec 5, 2025)</div>
         <div style={{display:'flex',gap:8,alignItems:'center', marginBottom:8}}>
           <select className="input" value={date} onChange={e=>setDate(e.target.value)}>
@@ -486,7 +437,96 @@ function AttendanceAdminPage(){
   )
 }
 
-/* ================================ App ================================ */
+/* ====================== Weigh-Ins (admin-only) ====================== */
+function WeighInsAdminPage(){
+  const [adminOk, setAdminOk] = React.useState(false)
+  const [parts, setParts] = React.useState([])
+  const [date, setDate] = React.useState('')
+  const [rows, setRows] = React.useState([])
+  const [saving, setSaving] = React.useState(false)
+
+  const dateOptions = React.useMemo(()=>{
+    const out = []
+    const start = new Date('2025-10-13')
+    const end   = new Date('2025-12-05')
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
+      const dow = d.getDay()
+      if (dow === 1 || dow === 5) { // Mon or Fri
+        const iso = d.toISOString().slice(0,10)
+        out.push({ iso, label: d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) })
+      }
+    }
+    return out
+  },[])
+
+  React.useEffect(()=>{
+    (async ()=>{
+      setAdminOk(await isAdminSafe())
+      const ps = await loadParticipantsSafe()
+      setParts(ps)
+      setRows(ps.map(p=>({ participant_id: p.id, weight_kg:'', waist_cm:'' })))
+    })()
+  },[])
+
+  function setField(pid, key, value){
+    setRows(prev => prev.map(r => r.participant_id===pid ? { ...r, [key]: value } : r))
+  }
+
+  async function save(e){
+    e.preventDefault()
+    if(!date) return alert('Pick a date (Mon or Fri)')
+    const payload = rows.filter(r => r.weight_kg !== '' || r.waist_cm !== '')
+    if(payload.length === 0) return alert('No values entered')
+    try {
+      setSaving(true)
+      const { data, error } = await supabase.rpc('upsert_weighins', { d: date, rows: payload })
+      setSaving(false)
+      if(error) return alert(error.message)
+      alert(`Saved ${data} weigh-in(s) for ${date}`)
+    } catch (err) {
+      setSaving(false)
+      alert(err.message || 'Failed to save weigh-ins')
+    }
+  }
+
+  if(!adminOk) return <div className="container"><div className="card">Admins only.</div></div>
+
+  return (
+    <div className="container">
+      <div className="card">
+        <div style={{fontWeight:800, marginBottom:8}}>Weigh-Ins (Mon & Fri)</div>
+        <div style={{display:'flex',gap:8,alignItems:'center', marginBottom:8}}>
+          <select className="input" value={date} onChange={e=>setDate(e.target.value)}>
+            <option value="">— Choose a date —</option>
+            {dateOptions.map(o=> <option key={o.iso} value={o.iso}>{o.label} ({o.iso})</option>)}
+          </select>
+        </div>
+        <form onSubmit={save}>
+          <table>
+            <thead><tr><th>Name</th><th>Weight (kg)</th><th>Waist (cm)</th></tr></thead>
+            <tbody>
+              {parts.map(p=>{
+                const r = rows.find(x=>x.participant_id===p.id) || {weight_kg:'',waist_cm:''}
+                return (
+                  <tr key={p.id}>
+                    <td>{p.name}</td>
+                    <td><input className="input" type="number" step="0.1" value={r.weight_kg} onChange={e=>setField(p.id,'weight_kg',e.target.value)} placeholder="e.g. 82.4" /></td>
+                    <td><input className="input" type="number" step="0.1" value={r.waist_cm} onChange={e=>setField(p.id,'waist_cm',e.target.value)} placeholder="e.g. 92.0" /></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+            <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save weigh-ins'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+/* ============================== App ============================== */
 export default function App(){
   const [user, setUser] = React.useState(null)
   const [admin, setAdmin] = React.useState(false)
@@ -513,139 +553,7 @@ export default function App(){
         <Route path="/admin/signin" element={<AdminSignInPage />} />
         <Route path="/admin/attendance" element={<AttendanceAdminPage />} />
         <Route path="/admin/weighins" element={<WeighInsAdminPage />} />
-
       </Routes>
     </>
-  )
-}
-{!admin && (
-  <NavLink
-    to="/admin/signin"
-    className={({isActive})=> isActive? 'active' : undefined }
-    style={{
-      background:'#f59e0b', color:'#111827',
-      padding:'6px 10px', borderRadius:8, fontWeight:700
-    }}
-  >
-    Admin sign in
-  </NavLink>
-)}
-function WeighInsAdminPage(){
-  const [adminOk, setAdminOk] = React.useState(false)
-  const [parts, setParts] = React.useState([])
-  const [date, setDate] = React.useState('')
-  const [rows, setRows] = React.useState([]) // [{participant_id, weight_kg, waist_cm}]
-  const [saving, setSaving] = React.useState(false)
-
-  // Monday & Friday options only (Oct 13–Dec 5, 2025)
-  const dateOptions = React.useMemo(()=>{
-    const out = []
-    const start = new Date('2025-10-13')
-    const end   = new Date('2025-12-05')
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) {
-      const dow = d.getDay()
-      if (dow === 1 || dow === 5) { // Mon or Fri
-        const iso = d.toISOString().slice(0,10)
-        out.push({ iso, label: d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) })
-      }
-    }
-    return out
-  },[])
-
-  React.useEffect(()=>{
-    (async ()=>{
-      // admin?
-      try {
-        const { data } = await supabase.rpc('is_admin')
-        setAdminOk(!!data)
-      } catch { setAdminOk(false) }
-
-      // participants
-      try {
-        const { data } = await supabase.from('participants').select('id,name').order('name')
-        setParts(data || [])
-        setRows((data||[]).map(p=>({ participant_id: p.id, weight_kg:'', waist_cm:'' })))
-      } catch { setParts([]); setRows([]) }
-    })()
-  },[])
-
-  function setField(pid, key, value){
-    setRows(prev => prev.map(r => r.participant_id===pid ? { ...r, [key]: value } : r))
-  }
-
-  async function save(e){
-    e.preventDefault()
-    if(!date) return alert('Pick a date (Mon or Fri)')
-    // keep only those with at least one number filled
-    const payload = rows.filter(r => r.weight_kg !== '' || r.waist_cm !== '')
-    if(payload.length === 0) return alert('No values entered')
-
-    try{
-      setSaving(true)
-      const { data, error } = await supabase.rpc('upsert_weighins', {
-        d: date,
-        rows: payload
-      })
-      setSaving(false)
-      if(error) return alert(error.message)
-      alert(`Saved ${data} weigh-in(s) for ${date}`)
-    }catch(err){
-      setSaving(false)
-      alert(err.message || 'Failed to save weigh-ins')
-    }
-  }
-
-  if(!adminOk){
-    return <div className="container"><div className="card" style={{padding:16}}>Admins only.</div></div>
-  }
-
-  return (
-    <div className="container">
-      <div className="card" style={{padding:16}}>
-        <div style={{fontWeight:800, marginBottom:8}}>Weigh-Ins (Mon & Fri only)</div>
-        <div style={{display:'flex',gap:8,alignItems:'center', marginBottom:8}}>
-          <select className="input" value={date} onChange={e=>setDate(e.target.value)}>
-            <option value="">— Choose a date —</option>
-            {dateOptions.map(o=> <option key={o.iso} value={o.iso}>{o.label} ({o.iso})</option>)}
-          </select>
-        </div>
-
-        <form onSubmit={save}>
-          <table>
-            <thead>
-              <tr><th>Name</th><th>Weight (kg)</th><th>Waist (cm)</th></tr>
-            </thead>
-            <tbody>
-              {parts.map(p=>{
-                const r = rows.find(x=>x.participant_id===p.id) || {weight_kg:'',waist_cm:''}
-                return (
-                  <tr key={p.id}>
-                    <td>{p.name}</td>
-                    <td>
-                      <input className="input" type="number" step="0.1"
-                        value={r.weight_kg}
-                        onChange={e=>setField(p.id, 'weight_kg', e.target.value)}
-                        placeholder="e.g. 82.4"
-                      />
-                    </td>
-                    <td>
-                      <input className="input" type="number" step="0.1"
-                        value={r.waist_cm}
-                        onChange={e=>setField(p.id, 'waist_cm', e.target.value)}
-                        placeholder="e.g. 92.0"
-                      />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-
-          <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
-            <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save weigh-ins'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
   )
 }
