@@ -24,7 +24,11 @@
       nav a { color:var(--text); text-decoration:none; padding:6px 10px; border-radius:8px; border:1px solid transparent; }
       nav a.active { background:#e2e8f0; border-color:#cbd5e1; }
       table { border-collapse: collapse; width: 100%; }
-      th, td { padding:8px; border-bottom:1px solid var(--border); text-align:left; }
+      th, td { padding:8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+      .thumb { width:56px; height:56px; border-radius:8px; object-fit:cover; border:1px solid var(--border); background:#e2e8f0; }
+      .rowgrid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap:10px; }
+      .two { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+      @media (max-width:700px){ .two { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
