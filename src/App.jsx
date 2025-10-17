@@ -175,10 +175,11 @@ function Dashboard(){
   React.useEffect(()=>{
     (async ()=>{
       // 1) Base participant info
-      const { data: ps, error: pErr } = await supabase
-        .from('participants')
-        .select('id,name,start_weight_kg,start_waist_cm')
-        .order('name')
+      const { data: ps } = await supabase
+  .from('participants')
+  .select('id,name,start_weight_kg,start_waist_cm')
+  .order('name') // <-- no .limit()
+
       if (pErr) { console.error(pErr); setRows([]); return }
 
       // 2) Latest weigh-in per participant
