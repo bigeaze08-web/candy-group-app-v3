@@ -23,7 +23,7 @@ function Header({ user, admin }) {
           {user
             ? <button className="btn" onClick={()=> supabase.auth.signOut().then(()=>window.location.reload())}>Sign out</button>
             : <button className="btn" onClick={async ()=>{
-                const email = prompt('Admin/participant email:')
+                const email = prompt('Email:')
                 const password = prompt('Password:')
                 if(!email || !password) return
                 const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -170,11 +170,12 @@ function Dashboard(){
 
   React.useEffect(()=>{
     (async ()=>{
-      // 1) Participants (NO LIMIT → we want ALL)
+      // 1) Participants (fetch up to 50)
       const { data: ps, error: pErr } = await supabase
         .from('participants')
         .select('id,name,start_weight_kg,start_waist_cm')
         .order('name')
+        .range(0, 49) // first 50 rows
       if (pErr) { console.error(pErr); setRows([]); return }
 
       // 2) Latest weigh-in per participant
@@ -289,6 +290,7 @@ function ParticipantsPage(){
         .from('participants')
         .select('id,name,email,phone,gender,start_weight_kg,start_waist_cm,photo_url')
         .order('registered_at',{ascending:false})
+        .range(0, 49) // first 50 rows
       setPs(rows||[])
     })()
   },[])
@@ -329,7 +331,7 @@ function ParticipantsPage(){
               <th>Start weight (kg)</th><th>Start waist (cm)</th><th></th><th></th>
             </tr>
           </thead>
-          <tbody>
+        <tbody>
             {ps.map(p=>(
               <tr key={p.id}>
                 <td>{p.photo_url
@@ -380,7 +382,10 @@ function AttendanceAdminPage(){
     (async ()=>{
       const { data } = await supabase.rpc('is_admin')
       setAdminOk(!!data)
-      const { data: ps } = await supabase.from('participants').select('id,name').order('name')
+      const { data: ps } = await supabase.from('participants')
+        .select('id,name')
+        .order('name')
+        .range(0, 49) // first 50 rows
       setParts(ps||[])
     })()
   },[])
@@ -466,6 +471,7 @@ function WeighInsAdminPage(){
         .from('participants')
         .select('id,name')
         .order('name')
+        .range(0, 49) // first 50 rows
       if (error) { setParts([]); setRows([]); return }
       setParts(ps || [])
       setRows((ps||[]).map(p=>({ participant_id: p.id, weight_kg:'', waist_cm:'' })))
