@@ -174,32 +174,40 @@ function Dashboard(){
 
   React.useEffect(()=>{
     (async ()=>{
-      const { data: ps } = await supabase
+      // 1) Base participant info
+      const { data: ps, error: pErr } = await supabase
         .from('participants')
         .select('id,name,start_weight_kg,start_waist_cm')
         .order('name')
+      if (pErr) { console.error(pErr); setRows([]); return }
 
+      // 2) Latest weigh-in per participant
+      // Try view first (if you created it), else compute from weigh_ins table
       let latest = []
-      const viewRes = await supabase.from('latest_weighin_per_participant')
+      const v = await supabase.from('latest_weighin_per_participant')
         .select('participant_id,date,weight_kg,waist_cm')
-      if(!viewRes.error && viewRes.data) {
-        latest = viewRes.data
+      if (!v.error && v.data) {
+        latest = v.data
       } else {
-        const { data: allWi } = await supabase.from('weigh_ins').select('participant_id,date,weight_kg,waist_cm')
+        const { data: allWi, error: wiErr } = await supabase
+          .from('weigh_ins')
+          .select('participant_id,date,weight_kg,waist_cm')
+        if (wiErr) { console.error(wiErr); }
         const m = new Map()
         ;(allWi||[]).forEach(w=>{
-          const key = w.participant_id
-          const prev = m.get(key)
-          if(!prev || w.date > prev.date) m.set(key, w)
+          const prev = m.get(w.participant_id)
+          if (!prev || w.date > prev.date) m.set(w.participant_id, w)
         })
         latest = Array.from(m.values())
       }
 
-      const { data: att } = await supabase
+      // 3) Attendance in the challenge window
+      const { data: att, error: aErr } = await supabase
         .from('attendance')
         .select('participant_id,date')
         .gte('date','2025-10-13')
         .lte('date','2025-12-05')
+      if (aErr) { console.error(aErr) }
 
       const attCountByPid = {}
       ;(att||[]).forEach(a=>{
@@ -209,34 +217,39 @@ function Dashboard(){
       const latestByPid = {}
       ;(latest||[]).forEach(l => { latestByPid[l.participant_id] = l })
 
+      // 4) Compute losses
       const computed = (ps||[]).map(p=>{
         const startW = Number(p.start_weight_kg || 0)
         const startWa = Number(p.start_waist_cm || 0)
         const l = latestByPid[p.id]
         const curW = Number(l?.weight_kg ?? startW)
         const curWa = Number(l?.waist_cm ?? startWa)
-        const lossKg = (startW && curW) ? (startW - curW) : 0
-        const lossWa = (startWa && curWa) ? (startWa - curWa) : 0
+        const lossKg = Math.max(0, (startW && curW) ? (startW - curW) : 0)
+        const lossWa = Math.max(0, (startWa && curWa) ? (startWa - curWa) : 0)
         const attendance = attCountByPid[p.id] || 0
         return { id:p.id, name:p.name, lossKg, lossWa, attendance }
       })
 
-      function ranking(arr, key){
-        const s=[...arr].sort((a,b)=> b[key]-a[key])
-        const pos=new Map(); s.forEach((r,i)=>pos.set(r.id,i+1)); return pos
-      }
-      const rW = ranking(computed,'lossKg')
-      const rWa = ranking(computed,'lossWa')
-      const rAt = ranking(computed,'attendance')
-      const N = computed.length
-      const scored = computed.map(r => ({
-        ...r,
-        score: ((N - (rW.get(r.id)||N) + 1)*0.7)
-             + ((N - (rWa.get(r.id)||N) + 1)*0.2)
-             + ((N - (rAt.get(r.id)||N) + 1)*0.1)
-      })).sort((a,b)=> b.score - a.score)
+      // 5) Normalize by maxima (avoid divide-by-zero)
+      const maxKg   = Math.max(1, ...computed.map(r => r.lossKg))
+      const maxWa   = Math.max(1, ...computed.map(r => r.lossWa))
+      const maxAtt  = Math.max(1, ...computed.map(r => r.attendance))
 
-      setRows(scored)
+      const withScore = computed.map(r => ({
+        ...r,
+        score: 0.7*(r.lossKg / maxKg) + 0.2*(r.lossWa / maxWa) + 0.1*(r.attendance / maxAtt)
+      }))
+
+      // 6) Sort by score desc, then tiebreakers
+      withScore.sort((a,b)=>{
+        if (b.score !== a.score) return b.score - a.score
+        if (b.lossKg !== a.lossKg) return b.lossKg - a.lossKg
+        if (b.lossWa !== a.lossWa) return b.lossWa - a.lossWa
+        if (b.attendance !== a.attendance) return b.attendance - a.attendance
+        return a.name.localeCompare(b.name)
+      })
+
+      setRows(withScore)
     })()
   },[])
 
@@ -245,15 +258,29 @@ function Dashboard(){
       <div className="card">
         <div style={{fontWeight:800, marginBottom:8}}>Dashboard — Leaderboard</div>
         <table>
-          <thead><tr><th>Rank</th><th>Name</th><th>Kg lost</th><th>Waist cm lost</th><th>Attendance</th></tr></thead>
-          <tbody>{rows.map((r,i)=>(
-            <tr key={r.id}><td>{i+1}</td><td>{r.name}</td><td>{r.lossKg.toFixed(1)}</td><td>{r.lossWa.toFixed(1)}</td><td>{r.attendance}</td></tr>
-          ))}</tbody>
+          <thead>
+            <tr>
+              <th>Rank</th><th>Name</th><th>Kg lost</th><th>Waist cm lost</th><th>Attendance</th><th>Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r,i)=>(
+              <tr key={r.id}>
+                <td>{i+1}</td>
+                <td>{r.name}</td>
+                <td>{r.lossKg.toFixed(1)}</td>
+                <td>{r.lossWa.toFixed(1)}</td>
+                <td>{r.attendance}</td>
+                <td>{(r.score*100).toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       </div>
     </div>
   )
 }
+
 
 /* ---------------- Participants (thumbnails + ADMIN inline edit) ---------------- */
 function ParticipantsPage(){
