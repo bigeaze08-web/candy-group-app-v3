@@ -74,10 +74,8 @@ function RegisterPage(){
       email, password, options: { emailRedirectTo: window.location.origin }
     })
     if (!signUpErr && signUpData?.user) {
-      // if email confirmation is on, user may need to confirm; but we continue (session is present)
       return signUpData.user
     }
-    // fallback: sign-in
     const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
     if (signInErr) throw new Error(signInErr.message)
     return signInData.user
@@ -91,32 +89,30 @@ function RegisterPage(){
     try {
       const user = await ensureSignedIn(email, password)
 
-      // create participant row (if not exists)
-      const row = {
+      // upsert participant by email
+      const base = {
         name: form.name,
-        email: email,
+        email,
         phone: form.phone || null,
         gender: form.gender || null,
         height_cm: form.height_cm ? Number(form.height_cm) : null,
         start_weight_kg: form.start_weight_kg ? Number(form.start_weight_kg) : null,
         start_waist_cm: form.start_waist_cm ? Number(form.start_waist_cm) : null
       }
-      // upsert by email
       const { data: existing } = await supabase.from('participants')
         .select('id').eq('email', email).limit(1)
       let pid = existing?.[0]?.id
       if(!pid){
-        const { data: ins, error: insErr } = await supabase.from('participants').insert(row).select('id').single()
+        const { data: ins, error: insErr } = await supabase.from('participants').insert(base).select('id').single()
         if (insErr) throw new Error(insErr.message)
         pid = ins.id
       } else {
-        await supabase.from('participants').update(row).eq('id', pid)
+        const { error: updErr } = await supabase.from('participants').update(base).eq('id', pid)
+        if (updErr) throw new Error(updErr.message)
       }
 
-      // upload photo (optional)
-      if (photo) {
-        await uploadToPhotos(pid, photo)
-      }
+      // optional photo
+      if (photo) await uploadToPhotos(pid, photo)
 
       alert('Registered successfully!')
       navigate('/participants')
@@ -168,22 +164,20 @@ function RegisterPage(){
   )
 }
 
-/* ---------------- Dashboard (70/20/10) ---------------- */
+/* ---------------- Dashboard (value-based 70/20/10) ---------------- */
 function Dashboard(){
   const [rows, setRows] = React.useState([])
 
   React.useEffect(()=>{
     (async ()=>{
-      // 1) Base participant info
-      const { data: ps } = await supabase
-  .from('participants')
-  .select('id,name,start_weight_kg,start_waist_cm')
-  .order('name') // <-- no .limit()
-
+      // 1) Participants (NO LIMIT → we want ALL)
+      const { data: ps, error: pErr } = await supabase
+        .from('participants')
+        .select('id,name,start_weight_kg,start_waist_cm')
+        .order('name')
       if (pErr) { console.error(pErr); setRows([]); return }
 
       // 2) Latest weigh-in per participant
-      // Try view first (if you created it), else compute from weigh_ins table
       let latest = []
       const v = await supabase.from('latest_weighin_per_participant')
         .select('participant_id,date,weight_kg,waist_cm')
@@ -202,7 +196,7 @@ function Dashboard(){
         latest = Array.from(m.values())
       }
 
-      // 3) Attendance in the challenge window
+      // 3) Attendance window
       const { data: att, error: aErr } = await supabase
         .from('attendance')
         .select('participant_id,date')
@@ -231,7 +225,7 @@ function Dashboard(){
         return { id:p.id, name:p.name, lossKg, lossWa, attendance }
       })
 
-      // 5) Normalize by maxima (avoid divide-by-zero)
+      // 5) Normalize by maxima
       const maxKg   = Math.max(1, ...computed.map(r => r.lossKg))
       const maxWa   = Math.max(1, ...computed.map(r => r.lossWa))
       const maxAtt  = Math.max(1, ...computed.map(r => r.attendance))
@@ -241,7 +235,7 @@ function Dashboard(){
         score: 0.7*(r.lossKg / maxKg) + 0.2*(r.lossWa / maxWa) + 0.1*(r.attendance / maxAtt)
       }))
 
-      // 6) Sort by score desc, then tiebreakers
+      // 6) Sort by score, then kg, waist, attendance, name
       withScore.sort((a,b)=>{
         if (b.score !== a.score) return b.score - a.score
         if (b.lossKg !== a.lossKg) return b.lossKg - a.lossKg
@@ -281,7 +275,6 @@ function Dashboard(){
     </div>
   )
 }
-
 
 /* ---------------- Participants (thumbnails + ADMIN inline edit) ---------------- */
 function ParticipantsPage(){
@@ -333,7 +326,7 @@ function ParticipantsPage(){
           <thead>
             <tr>
               <th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Gender</th>
-              <th>Start weight (kg)</th><th>Start waist (cm)</th>{admin && <th>Upload</th>}{admin && <th>Save</th>}
+              <th>Start weight (kg)</th><th>Start waist (cm)</th><th></th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -349,8 +342,8 @@ function ParticipantsPage(){
                 <td>{p.gender||''}</td>
                 <td>{admin ? <input className="input" type="number" step="0.1" value={p.start_weight_kg??''} onChange={e=>setField(p.id,'start_weight_kg',e.target.value)} /> : (p.start_weight_kg??'')}</td>
                 <td>{admin ? <input className="input" type="number" step="0.1" value={p.start_waist_cm??''} onChange={e=>setField(p.id,'start_waist_cm',e.target.value)} /> : (p.start_waist_cm??'')}</td>
-                {admin && <td><input type="file" accept="image/*" onChange={e=> onUpload(p, e.target.files?.[0]) } /></td>}
-                {admin && <td><button className="btn" disabled={savingId===p.id} onClick={()=>saveRow(p)}>{savingId===p.id?'Saving…':'Save'}</button></td>}
+                <td>{admin && <input type="file" accept="image/*" onChange={e=> onUpload(p, e.target.files?.[0]) } />}</td>
+                <td>{admin && <button className="btn" disabled={savingId===p.id} onClick={()=>saveRow(p)}>{savingId===p.id?'Saving…':'Save'}</button>}</td>
               </tr>
             ))}
           </tbody>
