@@ -170,12 +170,13 @@ function Dashboard(){
 
   React.useEffect(()=>{
     (async ()=>{
-      // 1) Participants (fetch up to 50)
-      const { data: ps, error: pErr } = await supabase
+      // 1) Participants (fetch up to 500)
+      const { data: ps, error: pErr, count } = await supabase
         .from('participants')
-        .select('id,name,start_weight_kg,start_waist_cm')
+        .select('id,name,start_weight_kg,start_waist_cm', { count: 'exact' })
         .order('name')
-        .range(0, 49) // first 50 rows
+        .range(0, 499) // first 500 rows
+      console.log('[Dashboard] participants length:', ps?.length, 'total count:', count, 'error:', pErr)
       if (pErr) { console.error(pErr); setRows([]); return }
 
       // 2) Latest weigh-in per participant
@@ -286,11 +287,12 @@ function ParticipantsPage(){
   React.useEffect(()=>{
     ;(async ()=>{
       try { const { data } = await supabase.rpc('is_admin'); setAdmin(!!data) } catch { setAdmin(false) }
-      const { data: rows } = await supabase
+      const { data: rows, error: pErr, count } = await supabase
         .from('participants')
-        .select('id,name,email,phone,gender,start_weight_kg,start_waist_cm,photo_url')
+        .select('id,name,email,phone,gender,start_weight_kg,start_waist_cm,photo_url', { count: 'exact' })
         .order('registered_at',{ascending:false})
-        .range(0, 49) // first 50 rows
+        .range(0, 499) // first 500 rows
+      console.log('[ParticipantsPage] length:', rows?.length, 'total count:', count, 'error:', pErr)
       setPs(rows||[])
     })()
   },[])
@@ -331,7 +333,7 @@ function ParticipantsPage(){
               <th>Start weight (kg)</th><th>Start waist (cm)</th><th></th><th></th>
             </tr>
           </thead>
-        <tbody>
+          <tbody>
             {ps.map(p=>(
               <tr key={p.id}>
                 <td>{p.photo_url
@@ -382,10 +384,11 @@ function AttendanceAdminPage(){
     (async ()=>{
       const { data } = await supabase.rpc('is_admin')
       setAdminOk(!!data)
-      const { data: ps } = await supabase.from('participants')
-        .select('id,name')
+      const { data: ps, error: pErr, count } = await supabase.from('participants')
+        .select('id,name', { count: 'exact' })
         .order('name')
-        .range(0, 49) // first 50 rows
+        .range(0, 499) // first 500 rows
+      console.log('[AttendanceAdmin] length:', ps?.length, 'total count:', count, 'error:', pErr)
       setParts(ps||[])
     })()
   },[])
@@ -467,11 +470,12 @@ function WeighInsAdminPage(){
     (async ()=>{
       const { data } = await supabase.rpc('is_admin')
       setAdminOk(!!data)
-      const { data: ps, error } = await supabase
+      const { data: ps, error, count } = await supabase
         .from('participants')
-        .select('id,name')
+        .select('id,name', { count: 'exact' })
         .order('name')
-        .range(0, 49) // first 50 rows
+        .range(0, 499) // first 500 rows
+      console.log('[WeighInsAdmin] length:', ps?.length, 'total count:', count, 'error:', error)
       if (error) { setParts([]); setRows([]); return }
       setParts(ps || [])
       setRows((ps||[]).map(p=>({ participant_id: p.id, weight_kg:'', waist_cm:'' })))
