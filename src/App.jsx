@@ -278,7 +278,7 @@ function Dashboard(){
   )
 }
 
-/* ---------------- Participants (thumbnails + ADMIN inline edit) ---------------- */
+/* ---------------- Participants (thumbnails + ADMIN inline edit + DELETE) ---------------- */
 function ParticipantsPage(){
   const [ps, setPs] = React.useState([])
   const [admin, setAdmin] = React.useState(false)
@@ -286,12 +286,20 @@ function ParticipantsPage(){
 
   React.useEffect(()=>{
     ;(async ()=>{
-      try { const { data } = await supabase.rpc('is_admin'); setAdmin(!!data) } catch { setAdmin(false) }
+      try {
+        const { data } = await supabase.rpc('is_admin')
+        console.log('[ParticipantsPage] is_admin()', data)
+        setAdmin(!!data)
+      } catch (e) {
+        console.error('is_admin RPC failed', e)
+        setAdmin(false)
+      }
+
       const { data: rows, error: pErr, count } = await supabase
         .from('participants')
         .select('id,name,email,phone,gender,start_weight_kg,start_waist_cm,photo_url', { count: 'exact' })
         .order('registered_at',{ascending:false})
-        .range(0, 499) // first 500 rows
+        .range(0, 499)
       console.log('[ParticipantsPage] length:', rows?.length, 'total count:', count, 'error:', pErr)
       setPs(rows||[])
     })()
@@ -304,7 +312,7 @@ function ParticipantsPage(){
   async function onUpload(p, file){
     if (!file) return
     try{
-      const url = await uploadToPhotos(p.id, file)
+      const url = await uploadToPhotos(p.id, file)  // uses the helper already in your file
       setPs(prev => prev.map(x => x.id===p.id ? { ...x, photo_url: url } : x))
       alert('Photo uploaded!')
     }catch(err){
@@ -315,30 +323,82 @@ function ParticipantsPage(){
   async function saveRow(p){
     setSavingId(p.id)
     const { error } = await supabase.from('participants').update({
-      email: p.email, phone: p.phone, start_weight_kg: p.start_weight_kg ? Number(p.start_weight_kg) : null,
+      email: p.email,
+      phone: p.phone,
+      start_weight_kg: p.start_weight_kg ? Number(p.start_weight_kg) : null,
       start_waist_cm: p.start_waist_cm ? Number(p.start_waist_cm) : null
     }).eq('id', p.id)
     setSavingId(null)
     if(error) alert(error.message); else alert('Saved!')
   }
 
+  async function handleDelete(p){
+    if(!admin) return alert('Admins only')
+    const yes = confirm(`Delete ${p.name}? This will remove their photos, weigh-ins, attendance and profile.`)
+    if(!yes) return
+
+    try {
+      // 1) Delete storage files under participants/{id}/ (best-effort)
+      try {
+        const prefix = `participants/${p.id}`
+        // list immediate children in that folder
+        const { data: listed, error: listErr } = await supabase.storage
+          .from('photos')
+          .list(prefix, { limit: 100, offset: 0, sortBy: { column:'name', order:'asc' } })
+        if (listErr) console.warn('list storage error:', listErr?.message)
+        if (listed && listed.length){
+          const paths = listed.map(f => `${prefix}/${f.name}`)
+          const { error: delStorErr } = await supabase.storage.from('photos').remove(paths)
+          if (delStorErr) console.warn('remove storage error:', delStorErr?.message)
+        }
+      } catch(e){ console.warn('storage cleanup skipped:', e?.message) }
+
+      // 2) Delete dependent rows (if you don’t have ON DELETE CASCADE)
+      const { error: delPhotosErr } = await supabase.from('photos').delete().eq('participant_id', p.id)
+      if (delPhotosErr) console.warn('del photos err:', delPhotosErr?.message)
+
+      const { error: delWiErr } = await supabase.from('weigh_ins').delete().eq('participant_id', p.id)
+      if (delWiErr) console.warn('del weigh_ins err:', delWiErr?.message)
+
+      const { error: delAttErr } = await supabase.from('attendance').delete().eq('participant_id', p.id)
+      if (delAttErr) console.warn('del attendance err:', delAttErr?.message)
+
+      // 3) Finally delete the participant
+      const { error: delPErr } = await supabase.from('participants').delete().eq('id', p.id)
+      if (delPErr) return alert(delPErr.message)
+
+      // 4) Update UI
+      setPs(prev => prev.filter(x => x.id !== p.id))
+      alert('Participant deleted.')
+    } catch(err){
+      alert(err.message || 'Delete failed')
+    }
+  }
+
   return (
     <div className="container">
       <div className="card">
-        <div style={{fontWeight:800, marginBottom:8}}>Participants</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div style={{fontWeight:800}}>Participants</div>
+          <div style={{fontSize:12, color: admin ? '#16a34a' : '#ef4444'}}>
+            {admin ? 'Admin mode' : 'Signed in (non-admin)'}
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
               <th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Gender</th>
-              <th>Start weight (kg)</th><th>Start waist (cm)</th><th></th><th></th>
+              <th>Start weight (kg)</th><th>Start waist (cm)</th>
+              <th>Upload</th><th>Save</th><th>Delete</th>
             </tr>
           </thead>
           <tbody>
             {ps.map(p=>(
               <tr key={p.id}>
-                <td>{p.photo_url
-                  ? <img src={p.photo_url} alt={p.name} className="thumb"/>
-                  : <div className="thumb" style={{display:'flex',alignItems:'center',justifyContent:'center',color:'#475569',fontSize:12}}>No photo</div>}
+                <td>
+                  {p.photo_url
+                    ? <img src={p.photo_url} alt={p.name} className="thumb"/>
+                    : <div className="thumb empty">No photo</div>}
                 </td>
                 <td>{p.name}</td>
                 <td>{admin ? <input className="input" value={p.email||''} onChange={e=>setField(p.id,'email',e.target.value)} /> : (p.email||'')}</td>
@@ -348,15 +408,17 @@ function ParticipantsPage(){
                 <td>{admin ? <input className="input" type="number" step="0.1" value={p.start_waist_cm??''} onChange={e=>setField(p.id,'start_waist_cm',e.target.value)} /> : (p.start_waist_cm??'')}</td>
                 <td>{admin && <input type="file" accept="image/*" onChange={e=> onUpload(p, e.target.files?.[0]) } />}</td>
                 <td>{admin && <button className="btn" disabled={savingId===p.id} onClick={()=>saveRow(p)}>{savingId===p.id?'Saving…':'Save'}</button>}</td>
+                <td>{admin && <button className="btn danger" onClick={()=>handleDelete(p)}>Delete</button>}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!admin && <div style={{marginTop:8,fontSize:12,color:'#475569'}}>Only admins can edit or upload photos here.</div>}
+        {!admin && <div style={{marginTop:8,fontSize:12,color:'#475569'}}>Only admins can edit, upload photos, or delete participants.</div>}
       </div>
     </div>
   )
 }
+
 
 /* ---------------- Admin: Attendance (Mon–Fri) ---------------- */
 function AttendanceAdminPage(){
